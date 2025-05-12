@@ -228,7 +228,6 @@ async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
     count = len(chatters)
     return PlainTextResponse(f"✅ Awarded {amount} {name} to {count} chatters in '{channel}'.")
 
-# ——— /leaderboard —————————————————————————————————————————————
 @app.get("/leaderboard")
 async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
     conn = sqlite3.connect(DB_FILE)
@@ -243,12 +242,11 @@ async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
     if not rows:
         return PlainTextResponse(f"No points yet in '{channel}'.")
 
-    max_user_len = max(len(u) for u, _ in rows)
-    header = f"{'User'.ljust(max_user_len)}   Points"
-    separator = "-" * len(header)
-    lines = [f"{u.ljust(max_user_len)}   {p}" for u, p in rows]
-    output = "\n".join([header, separator] + lines)
-    return PlainTextResponse("🏆 Leaderboard 🏆\n" + output)
+    # simple "user - points" pairs, separated by " | "
+    entries = [f"{u} - {p}" for u, p in rows]
+    line = " | ".join(entries)
+
+    return PlainTextResponse("🏆 Leaderboard 🏆 " + line)
 
 
 # ——— /gamble ———————————————————————————————————————————————————
