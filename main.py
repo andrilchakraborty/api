@@ -4,7 +4,8 @@ import random
 import asyncio
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,7 +20,13 @@ DB_FILE           = "shrimp.db"
 
 # ——— FastAPI setup ——————————————————————————————————————————————
 app = FastAPI()
+
+# Mount static files (optional—only if you have a ./static folder)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Jinja2 templates folder must contain your index.html
 templates = Jinja2Templates(directory="templates")
+
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
@@ -142,6 +149,14 @@ async def schedule_ping():
                 await asyncio.sleep(120)
     asyncio.create_task(pinger())
 
+# ——— Serve index.html ——————————————————————————————————————————
+@app.get("/", response_class=HTMLResponse)
+async def read_index(request: Request):
+    """
+    Renders templates/index.html at the root URL.
+    """
+    return templates.TemplateResponse("index.html", {"request": request})
+
 # ——— /setpoints ———————————————————————————————————————————————
 @app.get("/setpoints")
 async def setpoints(channel: str = DEFAULT_CHANNEL, name: str = None):
@@ -191,7 +206,7 @@ async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
     lines = [f"{u} — {p} {name}" for u, p in rows]
     return PlainTextResponse("🏆 Leaderboard 🏆\n" + "\n".join(lines))
 
-# ——— Helper to parse wager or “all” —————————————————————————————
+# ——— /gamble ———————————————————————————————————————————————————
 def parse_wager(wager_str: str, current: int) -> int:
     if wager_str.lower() == "all":
         return current
@@ -200,7 +215,6 @@ def parse_wager(wager_str: str, current: int) -> int:
     except:
         raise HTTPException(400, "Invalid wager")
 
-# ——— /gamble ———————————————————————————————————————————————————
 @app.get("/gamble")
 async def gamble(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
@@ -269,8 +283,6 @@ async def slots(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
 @app.get("/blackjack")
 async def blackjack(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
-    
-    # Interpret "all" wager
     if wager.lower() == "all":
         wager_amount = current
     else:
@@ -278,35 +290,29 @@ async def blackjack(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
             wager_amount = int(wager)
         except ValueError:
             raise HTTPException(400, "Wager must be a number or 'all'")
-    
+
     if wager_amount <= 0:
         raise HTTPException(400, "Wager must be positive")
     if wager_amount > current:
         return PlainTextResponse(f"❌ {user}, you only have {current} {get_points_name(channel)}!")
 
-    # Subtract the wager
     await add_user_points(user, channel, -wager_amount)
 
     def draw_card():
-        cards = [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11]  # 10 for J/Q/K, 11 for Ace
+        cards = [2,3,4,5,6,7,8,9,10,10,10,10,11]
         return random.choice(cards)
 
     def best_total(hand):
         total = sum(hand)
-        # Reduce Aces from 11 to 1 if needed
-        for _ in hand:
-            if total > 21 and 11 in hand:
-                hand[hand.index(11)] = 1
-                total = sum(hand)
+        while total > 21 and 11 in hand:
+            hand[hand.index(11)] = 1
+            total = sum(hand)
         return total
 
     player = [draw_card(), draw_card()]
     dealer = [draw_card(), draw_card()]
     player_total = best_total(player)
     dealer_total = best_total(dealer)
-
-    result = ""
-    payout = 0
 
     # Player hits until 17+
     while player_total < 17:
@@ -331,20 +337,17 @@ async def blackjack(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     else:
         result = f"💀 Dealer wins. {player_total} vs {dealer_total}."
 
-    hand_str = lambda h: ', '.join(str(card) for card in h)
     name = get_points_name(channel)
     final = get_points_table(user, channel)
-
     return PlainTextResponse(
         f"🃏 Blackjack 🃏\n"
-        f"{user}'s hand: {hand_str(player)} (Total: {player_total})\n"
-        f"Dealer's hand: {hand_str(dealer)} (Total: {dealer_total})\n"
+        f"{user}'s hand: {', '.join(map(str, player))} (Total: {player_total})\n"
+        f"Dealer's hand: {', '.join(map(str, dealer))} (Total: {dealer_total})\n"
         f"{result}\n"
         f"Final balance: {final} {name}."
     )
 
-
-# ——— /raffle & /join & /ping ——————————————————————————————————————————
+# ——— /raffle & /join & /ping ————————————————————————————————————————
 raffle = {"active": False, "amount": 0, "participants": set(), "task": None}
 
 async def raffle_timer(channel: str):
