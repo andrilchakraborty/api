@@ -2,6 +2,7 @@ import os
 import sqlite3
 import random
 import asyncio
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, HTMLResponse
@@ -18,10 +19,12 @@ REWARD_INTERVAL   = int(os.getenv("REWARD_INTERVAL", 300))
 REWARD_AMOUNT     = int(os.getenv("REWARD_AMOUNT", 100))
 DB_FILE           = "shrimp.db"
 
+# how long before you can rob the same victim again (in seconds)
+ROB_COOLDOWN      = 300  
+
 # ——— FastAPI setup ——————————————————————————————————————————————
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
-
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
@@ -29,6 +32,7 @@ app.add_middleware(
 # ——— Database initialization —————————————————————————————————————
 def init_db():
     conn = sqlite3.connect(DB_FILE)
+    # users table
     conn.execute("""
       CREATE TABLE IF NOT EXISTS users (
         channel     TEXT NOT NULL,
@@ -37,6 +41,7 @@ def init_db():
         PRIMARY KEY(channel, username)
       )
     """)
+    # settings table
     conn.execute(f"""
       CREATE TABLE IF NOT EXISTS settings (
         channel        TEXT PRIMARY KEY,
@@ -44,6 +49,17 @@ def init_db():
         reward_amount  INTEGER NOT NULL DEFAULT {REWARD_AMOUNT}
       )
     """)
+    # rob cooldowns
+    conn.execute("""
+      CREATE TABLE IF NOT EXISTS rob_cooldowns (
+        channel     TEXT NOT NULL,
+        robber      TEXT NOT NULL,
+        victim      TEXT NOT NULL,
+        last_rob    INTEGER NOT NULL,
+        PRIMARY KEY(channel, robber, victim)
+      )
+    """)
+    # seed default channel settings
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name, reward_amount)
       VALUES(?, ?, ?)
@@ -110,6 +126,35 @@ async def set_reward_amount(channel: str, amount: int):
       SET reward_amount = ?
       WHERE channel = ?
     """, (amount, channel))
+    conn.commit()
+    conn.close()
+
+def can_rob(channel: str, robber: str, victim: str) -> (bool, int):
+    """Returns (True, 0) if allowed, or (False, secs_remaining)."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+      SELECT last_rob FROM rob_cooldowns
+      WHERE channel=? AND robber=? AND victim=?
+    """, (channel, robber, victim))
+    row = c.fetchone()
+    now = int(time.time())
+    if row:
+        last = row[0]
+        if now - last < ROB_COOLDOWN:
+            return False, ROB_COOLDOWN - (now - last)
+    return True, 0
+
+async def update_rob_timestamp(channel: str, robber: str, victim: str):
+    now = int(time.time())
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+      INSERT INTO rob_cooldowns(channel, robber, victim, last_rob)
+      VALUES(?, ?, ?, ?)
+      ON CONFLICT(channel, robber, victim) DO UPDATE
+        SET last_rob = excluded.last_rob
+    """, (channel, robber, victim, now))
     conn.commit()
     conn.close()
 
@@ -195,6 +240,54 @@ async def setpoints(channel: str, name: str):
         raise HTTPException(400, "Must provide non-empty name")
     await set_points_name(channel, name.strip())
     return PlainTextResponse(f"✅ Points currency in '{channel}' set to “{name.strip()}”!")
+
+# ——— /rob ————————————————————————————————————————————————————
+@app.get("/rob")
+async def rob(robber: str, victim: str, channel: str = DEFAULT_CHANNEL):
+    """
+    Attempt to rob another user.
+    /rob?robber=you&victim=them&channel=foo
+    """
+    # cleanup usernames
+    r = robber.lstrip("@").strip()
+    v = victim.lstrip("@").strip()
+    name = get_points_name(channel)
+
+    if r.lower() == v.lower():
+        raise HTTPException(400, "❌ You can't rob yourself!")
+
+    allowed, wait = can_rob(channel, r, v)
+    if not allowed:
+        return PlainTextResponse(f"⏳ You must wait {wait}s before robbing {v} again.")
+
+    vic_pts = get_points_table(v, channel)
+    if vic_pts <= 0:
+        return PlainTextResponse(f"❌ {v} has no {name} to steal.")
+
+    # decide amount to steal (10–50% of their balance)
+    amount = random.randint(max(1, vic_pts // 10), max(1, vic_pts // 2))
+
+    # define fun scenarios
+    scenarios = [
+        f"You tiptoe behind {v} and snatch {amount} {name} before they notice!",
+        f"{v} drops a bagscash—lucky you grab {amount} {name}!",
+        f"{v} was busy dancing, so you pickpocket {amount} {name} undetected!",
+        f"You challenge {v} to rock-paper-scissors and cheat your way to {amount} {name}!",
+        f"{v} falls asleep. You gently remove {amount} {name} from their pocket.",
+        f"{v} is distracted by a cat video—steal {amount} {name} in the chaos!",
+        f"You mug {v} with a fluffy cupcake and get away with {amount} {name}!",
+        f"{v} can't resist your puppy eyes and hands you {amount} {name}. Sneaky!",
+        f"You sell {v} a 'magic' pebble and pocket {amount} {name}. Oops!",
+        f"A friendly ghost helps you lift {amount} {name} from {v}'s wallet."
+    ]
+    message = random.choice(scenarios)
+
+    # apply the robbery
+    await add_user_points(r, channel, amount)
+    await add_user_points(v, channel, -amount)
+    await update_rob_timestamp(channel, r, v)
+
+    return PlainTextResponse(f"💰 {message}")
 
 # ——— /points ————————————————————————————————————————————————
 @app.get("/points")
