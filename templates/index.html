@@ -3,7 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>🦐 Shrimp API Documentation</title>
+  <title> Points API Documentation</title>
+  <meta name="description" content="Points API: A Nightbot-ready REST API that adds a per-channel points system, mini-games, raffles, leaderboards and more to your Twitch chat." />
+  <!-- Open Graph -->
+  <meta property="og:title" content="Points API Documentation" />
+  <meta property="og:description" content="Nightbot-ready REST API for per-channel points, games, raffles, leaderboards & more." />
+  <meta property="og:image" content="https://yt3.ggpht.com/-TGo4_AHc7Po/AAAAAAAAAAI/AAAAAAAAAAA/6X489lMTauA/s900-c-k-no-mo-rj-c0xffffff/photo.jpg" />
+  <meta property="og:type" content="website" />
+  <!-- Favicon -->
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+
   <style>
     /* Base Reset */
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -121,8 +130,8 @@
   </style>
 </head>
 <body>
-  <h1>🦐 Shrimp API</h1>
-  <p class="lead">Beautiful, per-channel points REST API. Copy & paste Nightbot commands below.</p>
+  <h1>Points API</h1>
+  <p class="lead">Points API is a Nightbot-ready REST API that gives your Twitch channel a per-channel points system, mini-games (gamble, slots, blackjack), raffles, leaderboards—and more!</p>
 
   <div class="grid">
     <!-- /points -->
@@ -183,7 +192,7 @@
     <!-- /gamble -->
     <div class="card">
       <h2>🎲 /gamble</h2>
-      <p>Wager points for random multipliers.</p>
+      <p>Wager points for random multipliers. Under the hood it randomly picks one of three payout algorithms—basic multiplier, double-or-nothing, or jackpot—so each gamble feels fresh.</p>
       <ul class="params">
         <li><strong>user</strong></li>
         <li><strong>wager</strong> (int)</li>
@@ -214,6 +223,25 @@
 }</pre></div>
       <div class="command" data-cmd="!commands add !slots $(urlfetch https://api-jt5t.onrender.com/slots?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))">
         <code>!commands add !slots …</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
+    <!-- /blackjack -->
+    <div class="card">
+      <h2>🃏 /blackjack</h2>
+      <p>Play a streamlined blackjack: both you and the dealer draw to 17+, Aces adjust between 11/1, and you either win, push, or bust.</p>
+      <ul class="params">
+        <li><strong>user</strong> (string)</li>
+        <li><strong>wager</strong> (int or “all”)</li>
+        <li><strong>channel</strong> (string)</li>
+      </ul>
+      <code>GET /blackjack?user=jane&amp;wager=100&amp;channel=foo</code>
+      <div class="sample"><pre>{
+  "message": "🃏 Blackjack 🃏\nDealer wins. 18 vs 20.\nFinal balance: 1200 shrimp points."
+}</pre></div>
+      <div class="command" data-cmd="!commands add !blackjack $(urlfetch https://api-jt5t.onrender.com/blackjack?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))">
+        <code>!commands add !blackjack …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
