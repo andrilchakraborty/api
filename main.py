@@ -20,8 +20,6 @@ DB_FILE           = "shrimp.db"
 
 # ——— FastAPI setup ——————————————————————————————————————————————
 app = FastAPI()
-
-# Jinja2 templates
 templates = Jinja2Templates(directory="templates")
 
 app.add_middleware(
@@ -45,7 +43,6 @@ def init_db():
         points_name  TEXT NOT NULL
       )
     """)
-    # ensure default channel has an entry
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name)
       VALUES(?, ?)
@@ -95,6 +92,7 @@ async def set_points_name(channel: str, name: str):
     """, (channel, name))
     conn.commit()
     conn.close()
+
 
 # ——— IRC chatter fetcher —————————————————————————————————————
 async def fetch_chatters_irc(channel: str) -> set:
@@ -182,14 +180,17 @@ async def points(user: str, channel: str = DEFAULT_CHANNEL):
     return PlainTextResponse(f"{user}, you have {pts} {name} in '{channel}'.")
 
 # ——— /add ————————————————————————————————————————————————
+# ——— /add ————————————————————————————————————————————————
 @app.get("/add")
 async def add_points(user: str, amount: int, channel: str = DEFAULT_CHANNEL):
+    # strip leading '@' if present
+    clean_user = user.lstrip("@").strip()
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
-    await add_user_points(user, channel, amount)
-    pts  = get_points_table(user, channel)
+    await add_user_points(clean_user, channel, amount)
+    pts  = get_points_table(clean_user, channel)
     name = get_points_name(channel)
-    return PlainTextResponse(f"✅ {user} now has {pts} {name}.")
+    return PlainTextResponse(f"✅ {clean_user} now has {pts} {name}.")
 
 # ——— /addall —————————————————————————————————————————————
 @app.get("/addall/{amount}")
