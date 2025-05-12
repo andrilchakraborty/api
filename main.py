@@ -184,8 +184,8 @@ async def add_points(user: str, amount: int, channel: str = DEFAULT_CHANNEL):
     return PlainTextResponse(f"✅ {user} now has {pts} {name}.")
 
 # ——— /addall endpoint —————————————————————————————————————————————
-@app.get("/addall")
-async def addall(amount: int = REWARD_AMOUNT, channel: str = DEFAULT_CHANNEL):
+@app.get("/addall/{amount}")
+async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
     chatters = await fetch_chatters_irc(channel)
@@ -193,8 +193,9 @@ async def addall(amount: int = REWARD_AMOUNT, channel: str = DEFAULT_CHANNEL):
         await add_user_points(u, channel, amount)
     name = get_points_name(channel)
     return PlainTextResponse(
-      f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'."
+        f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'."
     )
+
 
 # ——— /leaderboard ———————————————————————————————————————————————
 @app.get("/leaderboard")
