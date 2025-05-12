@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # Configuration
 SERVICE_URL     = "https://api-jt5t.onrender.com"           # for keep-alive ping
 CHANNEL         = os.getenv("TWITCH_CHANNEL", "shrimpur")
-BOT_NICK        = os.getenv("BOT_NICK")                     # your bot’s username
-BOT_OAUTH       = os.getenv("BOT_OAUTH")                    # oauth: token from Twitch
+BOT_NICK        = os.getenv("shrimpur")                     # your bot’s username
+BOT_OAUTH       = os.getenv("cmpcspwktd3q5o6gwux3glg2e9dyxe")                    # oauth: token from Twitch
 REWARD_INTERVAL = int(os.getenv("REWARD_INTERVAL", 300))    # seconds between rewards
 REWARD_AMOUNT   = int(os.getenv("REWARD_AMOUNT", 100))      # points per reward
 
