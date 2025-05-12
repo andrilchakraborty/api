@@ -269,44 +269,80 @@ async def slots(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
 @app.get("/blackjack")
 async def blackjack(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
-    amount  = parse_wager(wager, current)
-    if amount <= 0 or amount > current:
-        raise HTTPException(400, "Invalid wager")
-    await add_user_points(user, channel, -amount)
+    
+    # Interpret "all" wager
+    if wager.lower() == "all":
+        wager_amount = current
+    else:
+        try:
+            wager_amount = int(wager)
+        except ValueError:
+            raise HTTPException(400, "Wager must be a number or 'all'")
+    
+    if wager_amount <= 0:
+        raise HTTPException(400, "Wager must be positive")
+    if wager_amount > current:
+        return PlainTextResponse(f"❌ {user}, you only have {current} {get_points_name(channel)}!")
 
-    # deal
-    def deal_hand():
-        hand = [random.randint(1, 11) for _ in range(2)]
+    # Subtract the wager
+    await add_user_points(user, channel, -wager_amount)
+
+    def draw_card():
+        cards = [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11]  # 10 for J/Q/K, 11 for Ace
+        return random.choice(cards)
+
+    def best_total(hand):
         total = sum(hand)
-        while total < 17:
-            card = random.randint(1, 11)
-            hand.append(card); total += card
+        # Reduce Aces from 11 to 1 if needed
+        for _ in hand:
+            if total > 21 and 11 in hand:
+                hand[hand.index(11)] = 1
+                total = sum(hand)
         return total
 
-    user_total   = deal_hand()
-    dealer_total = deal_hand()
+    player = [draw_card(), draw_card()]
+    dealer = [draw_card(), draw_card()]
+    player_total = best_total(player)
+    dealer_total = best_total(dealer)
 
-    if user_total > 21:
-        result = f"💥 You busted with {user_total}! Lost {amount}."
-        payout = 0
-    elif dealer_total > 21 or user_total > dealer_total:
-        payout = amount * 2
-        result = f"🎉 You win! Your {user_total} vs dealer {dealer_total}. Won {payout}."
-    elif user_total == dealer_total:
-        payout = amount
-        result = f"😐 Push: {user_total} vs {dealer_total}. Wager returned."
-    else:
-        payout = 0
-        result = f"💔 You lose: your {user_total} vs dealer {dealer_total}."
+    result = ""
+    payout = 0
 
-    if payout > 0:
+    # Player hits until 17+
+    while player_total < 17:
+        player.append(draw_card())
+        player_total = best_total(player)
+
+    # Dealer hits until 17+
+    while dealer_total < 17:
+        dealer.append(draw_card())
+        dealer_total = best_total(dealer)
+
+    if player_total > 21:
+        result = f"💥 {user} busted with {player_total}!"
+    elif dealer_total > 21 or player_total > dealer_total:
+        payout = wager_amount * 2
         await add_user_points(user, channel, payout)
+        result = f"🎉 {user} wins! {player_total} vs {dealer_total}. Payout: {payout}."
+    elif player_total == dealer_total:
+        payout = wager_amount
+        await add_user_points(user, channel, payout)
+        result = f"😐 Push. Both had {player_total}. Wager returned."
+    else:
+        result = f"💀 Dealer wins. {player_total} vs {dealer_total}."
 
+    hand_str = lambda h: ', '.join(str(card) for card in h)
+    name = get_points_name(channel)
     final = get_points_table(user, channel)
-    name  = get_points_name(channel)
+
     return PlainTextResponse(
-        f"{result}\nFinal balance: {final} {name}."
+        f"🃏 Blackjack 🃏\n"
+        f"{user}'s hand: {hand_str(player)} (Total: {player_total})\n"
+        f"Dealer's hand: {hand_str(dealer)} (Total: {dealer_total})\n"
+        f"{result}\n"
+        f"Final balance: {final} {name}."
     )
+
 
 # ——— /raffle & /join & /ping ——————————————————————————————————————————
 raffle = {"active": False, "amount": 0, "participants": set(), "task": None}
