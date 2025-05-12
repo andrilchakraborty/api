@@ -254,8 +254,16 @@ async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
 
     if not rows:
         return PlainTextResponse(f"No points yet in '{channel}'.")
-    lines = [f"{u} - {p}" for u, p in rows]
-    return PlainTextResponse("🏆 Leaderboard 🏆\n" + "\n".join(lines))
+
+    # determine padding so columns line up
+    max_user_len = max(len(u) for u, _ in rows)
+    header = f"{'User'.ljust(max_user_len)}   Points"
+    separator = "-" * len(header)
+
+    lines = [f"{u.ljust(max_user_len)}   {p}" for u, p in rows]
+    output = "\n".join([header, separator] + lines)
+    return PlainTextResponse("🏆 Leaderboard 🏆\n" + output)
+
 
 # ——— /gamble ———————————————————————————————————————————————————
 def parse_wager(wager_str: str, current: int) -> int:
