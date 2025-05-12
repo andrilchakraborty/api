@@ -203,19 +203,24 @@ async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
     return PlainTextResponse(f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'.")
 
 # ——— /leaderboard —————————————————————————————————————————————
+# ——— /leaderboard —————————————————————————————————————————————
 @app.get("/leaderboard")
 async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT username, points FROM users WHERE channel = ? ORDER BY points DESC LIMIT ?", (channel, limit))
+    c.execute(
+        "SELECT username, points FROM users WHERE channel = ? ORDER BY points DESC LIMIT ?",
+        (channel, limit)
+    )
     rows = c.fetchall()
     conn.close()
 
-    name = get_points_name(channel)
     if not rows:
-        return PlainTextResponse(f"No {name} yet in '{channel}'.")
-    lines = [f"{u} — {p} {name}" for u, p in rows]
+        return PlainTextResponse(f"No points yet in '{channel}'.")
+    # format as "username - points"
+    lines = [f"{u} - {p}" for u, p in rows]
     return PlainTextResponse("🏆 Leaderboard 🏆\n" + "\n".join(lines))
+
 
 # ——— /gamble ———————————————————————————————————————————————————
 def parse_wager(wager_str: str, current: int) -> int:
