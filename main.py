@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
 # ——— Configuration —————————————————————————————————————————————
-SERVICE_URL       = "https://api-jt5t.onrender.com"  # keep-alive ping URL
+SERVICE_URL       = "https://api-jt5t.onrender.com"
 DEFAULT_CHANNEL   = os.getenv("TWITCH_CHANNEL", "shrimpur")
 BOT_NICK          = os.getenv("TWITCH_BOT_NICK", "shrimpur")
 BOT_OAUTH         = os.getenv("TWITCH_OAUTH", "oauth:xaz44k12jaiufen1ngyme5bn0lyhca")
@@ -27,7 +27,6 @@ app.add_middleware(
 # ——— Database initialization —————————————————————————————————————
 def init_db():
     conn = sqlite3.connect(DB_FILE)
-    # users table
     conn.execute("""
       CREATE TABLE IF NOT EXISTS users (
         channel     TEXT NOT NULL,
@@ -36,14 +35,12 @@ def init_db():
         PRIMARY KEY(channel, username)
       )
     """)
-    # settings table for per-channel point names
     conn.execute("""
       CREATE TABLE IF NOT EXISTS settings (
         channel      TEXT PRIMARY KEY,
         points_name  TEXT NOT NULL
       )
     """)
-    # ensure default channel has default name
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name)
       VALUES(?, ?)
@@ -57,12 +54,8 @@ init_db()
 def get_points_table(user: str, channel: str) -> int:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("""
-      SELECT points FROM users
-      WHERE channel = ? AND username = ?
-    """, (channel, user))
-    row = c.fetchone()
-    conn.close()
+    c.execute("SELECT points FROM users WHERE channel = ? AND username = ?", (channel, user))
+    row = c.fetchone(); conn.close()
     return row[0] if row else 0
 
 async def add_user_points(user: str, channel: str, amount: int):
@@ -74,15 +67,13 @@ async def add_user_points(user: str, channel: str, amount: int):
       ON CONFLICT(channel, username) DO UPDATE
         SET points = points + ?
     """, (channel, user, amount, amount))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 def get_points_name(channel: str) -> str:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT points_name FROM settings WHERE channel = ?", (channel,))
-    row = c.fetchone()
-    conn.close()
+    row = c.fetchone(); conn.close()
     return row[0] if row else "points"
 
 async def set_points_name(channel: str, name: str):
@@ -94,27 +85,23 @@ async def set_points_name(channel: str, name: str):
       ON CONFLICT(channel) DO UPDATE
         SET points_name = excluded.points_name
     """, (channel, name))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
-# ——— IRC-based chatter fetcher (authenticated!) —————————————————————
+# ——— IRC chatter fetcher —————————————————————————————————————
 async def fetch_chatters_irc(channel: str) -> set:
     reader, writer = await asyncio.open_connection('irc.chat.twitch.tv', 6667)
     writer.write(f"PASS {BOT_OAUTH}\r\n".encode())
     writer.write(f"NICK {BOT_NICK}\r\n".encode())
     writer.write("CAP REQ :twitch.tv/membership\r\n".encode())
-    writer.write(f"JOIN #{channel}\r\n".encode())
-    await writer.drain()
+    writer.write(f"JOIN #{channel}\r\n".encode()); await writer.drain()
 
     chatters = set()
     while True:
         line = await reader.readline()
-        if not line:
-            break
+        if not line: break
         text = line.decode(errors='ignore').strip()
         if text.startswith("PING"):
-            writer.write("PONG :tmi.twitch.tv\r\n".encode())
-            await writer.drain()
+            writer.write("PONG :tmi.twitch.tv\r\n".encode()); await writer.drain()
         elif " 353 " in text:
             parts = text.split(" :", 1)
             if len(parts) == 2:
@@ -123,11 +110,10 @@ async def fetch_chatters_irc(channel: str) -> set:
         elif " 366 " in text:
             break
 
-    writer.close()
-    await writer.wait_closed()
+    writer.close(); await writer.wait_closed()
     return chatters
 
-# ——— Background reward loop ——————————————————————————————————————
+# ——— Background rewards ——————————————————————————————————————
 @app.on_event("startup")
 async def start_reward_loop():
     async def loop_rewards():
@@ -136,8 +122,8 @@ async def start_reward_loop():
                 chan = DEFAULT_CHANNEL
                 name = get_points_name(chan)
                 chatters = await fetch_chatters_irc(chan)
-                for user in chatters:
-                    await add_user_points(user, chan, REWARD_AMOUNT)
+                for u in chatters:
+                    await add_user_points(u, chan, REWARD_AMOUNT)
                 print(f"Rewarded {len(chatters)} users {REWARD_AMOUNT} {name} each in {chan}.")
             except Exception as e:
                 print("Reward loop error:", e)
@@ -151,10 +137,8 @@ async def schedule_ping():
         import httpx
         async with httpx.AsyncClient(timeout=5) as client:
             while True:
-                try:
-                    await client.get(f"{SERVICE_URL}/ping")
-                except:
-                    pass
+                try: await client.get(f"{SERVICE_URL}/ping")
+                except: pass
                 await asyncio.sleep(120)
     asyncio.create_task(pinger())
 
@@ -166,14 +150,14 @@ async def setpoints(channel: str = DEFAULT_CHANNEL, name: str = None):
     await set_points_name(channel, name.strip())
     return PlainTextResponse(f"✅ Points currency in '{channel}' set to “{name.strip()}”!")
 
-# ——— /points endpoint —————————————————————————————————————————————
+# ——— /points ————————————————————————————————————————————————
 @app.get("/points")
 async def points(user: str, channel: str = DEFAULT_CHANNEL):
-    pts = get_points_table(user, channel)
+    pts  = get_points_table(user, channel)
     name = get_points_name(channel)
     return PlainTextResponse(f"{user}, you have {pts} {name} in '{channel}'.")
 
-# ——— /add endpoint ————————————————————————————————————————————————
+# ——— /add ————————————————————————————————————————————————
 @app.get("/add")
 async def add_points(user: str, amount: int, channel: str = DEFAULT_CHANNEL):
     if amount <= 0:
@@ -183,7 +167,7 @@ async def add_points(user: str, amount: int, channel: str = DEFAULT_CHANNEL):
     name = get_points_name(channel)
     return PlainTextResponse(f"✅ {user} now has {pts} {name}.")
 
-# ——— /addall endpoint —————————————————————————————————————————————
+# ——— /addall —————————————————————————————————————————————
 @app.get("/addall/{amount}")
 async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
     if amount <= 0:
@@ -192,53 +176,52 @@ async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
     for u in chatters:
         await add_user_points(u, channel, amount)
     name = get_points_name(channel)
-    return PlainTextResponse(
-        f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'."
-    )
+    return PlainTextResponse(f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'.")
 
-
-# ——— /leaderboard ———————————————————————————————————————————————
+# ——— /leaderboard —————————————————————————————————————————————
 @app.get("/leaderboard")
 async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
-    conn = sqlite3.connect(DB_FILE)
-    c    = conn.cursor()
-    c.execute("""
-      SELECT username, points
-      FROM users
-      WHERE channel = ?
-      ORDER BY points DESC
-      LIMIT ?
-    """, (channel, limit))
-    rows = c.fetchall()
-    conn.close()
+    conn = sqlite3.connect(DB_FILE); c = conn.cursor()
+    c.execute("SELECT username, points FROM users WHERE channel = ? ORDER BY points DESC LIMIT ?", (channel, limit))
+    rows = c.fetchall(); conn.close()
 
     name = get_points_name(channel)
     if not rows:
         return PlainTextResponse(f"No {name} yet in '{channel}'.")
-    lines = [f"{u} — {p} {name}" for u,p in rows]
+    lines = [f"{u} — {p} {name}" for u, p in rows]
     return PlainTextResponse("🏆 Leaderboard 🏆\n" + "\n".join(lines))
+
+# ——— Helper to parse wager or “all” —————————————————————————————
+def parse_wager(wager_str: str, current: int) -> int:
+    if wager_str.lower() == "all":
+        return current
+    try:
+        return int(wager_str)
+    except:
+        raise HTTPException(400, "Invalid wager")
 
 # ——— /gamble ———————————————————————————————————————————————————
 @app.get("/gamble")
-async def gamble(user: str, wager: int, channel: str = DEFAULT_CHANNEL):
-    if wager <= 0:
-        raise HTTPException(400, "Wager must be positive")
+async def gamble(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
-    if wager > current:
+    amount  = parse_wager(wager, current)
+    if amount <= 0:
+        raise HTTPException(400, "Wager must be positive")
+    if amount > current:
         return PlainTextResponse(f"❌ {user}, you only have {current} {get_points_name(channel)}!")
-    await add_user_points(user, channel, -wager)
+    await add_user_points(user, channel, -amount)
 
     multipliers = [1, 5, 10, 20, 50]
     weights     = [20, 50, 15, 10, 5]
     mul         = random.choices(multipliers, weights=weights, k=1)[0]
-    payout      = wager * mul
+    payout      = amount * mul
     await add_user_points(user, channel, payout)
 
     final = get_points_table(user, channel)
     name  = get_points_name(channel)
     sym   = "🎉" if mul > 1 else "😐"
     msg   = (
-        f"{sym} {user} gambled {wager} {name} and hit a ×{mul} multiplier!\n"
+        f"{sym} {user} gambled {amount} {name} and hit a ×{mul} multiplier!\n"
         f"Payout: {payout} {name}.\n"
         f"Final balance: {final} {name}."
     )
@@ -246,31 +229,33 @@ async def gamble(user: str, wager: int, channel: str = DEFAULT_CHANNEL):
 
 # ——— /slots ————————————————————————————————————————————————————
 @app.get("/slots")
-async def slots(user: str, wager: int, channel: str = DEFAULT_CHANNEL):
-    if wager <= 0:
-        raise HTTPException(400, "Wager must be positive")
+async def slots(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
-    if wager > current:
+    amount  = parse_wager(wager, current)
+    if amount <= 0:
+        raise HTTPException(400, "Wager must be positive")
+    if amount > current:
         return PlainTextResponse(f"❌ {user}, you only have {current} {get_points_name(channel)}!")
-    await add_user_points(user, channel, -wager)
+    await add_user_points(user, channel, -amount)
 
     symbols = ["🍒","🍋","🔔","🍉","⭐","🍀"]
-    reels = [random.choice(symbols) for _ in range(3)]
+    reels   = [random.choice(symbols) for _ in range(3)]
     await asyncio.sleep(1)
 
     multipliers = [0, 1, 2, 5, 10, 20]
     weights     = [50, 20, 15, 10, 4, 1]
     mul         = random.choices(multipliers, weights=weights, k=1)[0]
-    payout      = wager * mul
+    payout      = amount * mul
 
     if payout > 0:
         await add_user_points(user, channel, payout)
-        if mul == 1:
-            result = f"😐 You got your wager back (×1)."
-        else:
-            result = f"🎉 You hit a ×{mul} multiplier and won {payout} {get_points_name(channel)}!"
+        result = (
+            "😐 You got your wager back (×1)."
+            if mul == 1 else
+            f"🎉 You hit a ×{mul} multiplier and won {payout} {get_points_name(channel)}!"
+        )
     else:
-        result = f"💔 No win this time. You lost your wager of {wager}."
+        result = f"💔 No win this time. You lost your wager of {amount}."
 
     final = get_points_table(user, channel)
     name  = get_points_name(channel)
@@ -280,8 +265,50 @@ async def slots(user: str, wager: int, channel: str = DEFAULT_CHANNEL):
         f"Final balance: {final} {name}."
     )
 
-# ——— /raffle and /ping ——————————————————————————————————————————
+# ——— /blackjack —————————————————————————————————————————————————
+@app.get("/blackjack")
+async def blackjack(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
+    current = get_points_table(user, channel)
+    amount  = parse_wager(wager, current)
+    if amount <= 0 or amount > current:
+        raise HTTPException(400, "Invalid wager")
+    await add_user_points(user, channel, -amount)
 
+    # deal
+    def deal_hand():
+        hand = [random.randint(1, 11) for _ in range(2)]
+        total = sum(hand)
+        while total < 17:
+            card = random.randint(1, 11)
+            hand.append(card); total += card
+        return total
+
+    user_total   = deal_hand()
+    dealer_total = deal_hand()
+
+    if user_total > 21:
+        result = f"💥 You busted with {user_total}! Lost {amount}."
+        payout = 0
+    elif dealer_total > 21 or user_total > dealer_total:
+        payout = amount * 2
+        result = f"🎉 You win! Your {user_total} vs dealer {dealer_total}. Won {payout}."
+    elif user_total == dealer_total:
+        payout = amount
+        result = f"😐 Push: {user_total} vs {dealer_total}. Wager returned."
+    else:
+        payout = 0
+        result = f"💔 You lose: your {user_total} vs dealer {dealer_total}."
+
+    if payout > 0:
+        await add_user_points(user, channel, payout)
+
+    final = get_points_table(user, channel)
+    name  = get_points_name(channel)
+    return PlainTextResponse(
+        f"{result}\nFinal balance: {final} {name}."
+    )
+
+# ——— /raffle & /join & /ping ——————————————————————————————————————————
 raffle = {"active": False, "amount": 0, "participants": set(), "task": None}
 
 async def raffle_timer(channel: str):
@@ -289,17 +316,12 @@ async def raffle_timer(channel: str):
     entrants = list(raffle["participants"])
     winners  = random.sample(entrants, k=min(3, len(entrants))) if entrants else []
     split    = raffle["amount"] // max(1, len(winners))
-
     for w in winners:
         await add_user_points(w, channel, split)
 
     name = get_points_name(channel)
     if winners:
-        announcement = (
-          "🎉 Raffle ended in #" + channel + "! Winners: " +
-          ", ".join(winners) +
-          f" — each wins {split} {name}! 🎉"
-        )
+        announcement = f"🎉 Raffle in #{channel}! Winners: {', '.join(winners)} — each wins {split} {name}! 🎉"
     else:
         announcement = f"😢 Raffle ended with no entrants in #{channel}."
 
@@ -308,13 +330,10 @@ async def raffle_timer(channel: str):
         w.write(f"PASS {BOT_OAUTH}\r\n".encode())
         w.write(f"NICK {BOT_NICK}\r\n".encode())
         w.write("CAP REQ :twitch.tv/membership twitch.tv/tags twitch.tv/commands\r\n".encode())
-        w.write(f"JOIN #{channel}\r\n".encode())
-        await w.drain()
+        w.write(f"JOIN #{channel}\r\n".encode()); await w.drain()
         await asyncio.sleep(1)
-        w.write(f"PRIVMSG #{channel} :{announcement}\r\n".encode())
-        await w.drain()
-        w.close()
-        await w.wait_closed()
+        w.write(f"PRIVMSG #{channel} :{announcement}\r\n".encode()); await w.drain()
+        w.close(); await w.wait_closed()
     except:
         pass
 
@@ -330,9 +349,7 @@ async def start_raffle(amount: int, channel: str = DEFAULT_CHANNEL):
     raffle.update(active=True, amount=amount, participants=set(),
                   task=asyncio.create_task(raffle_timer(channel)))
     name = get_points_name(channel)
-    return PlainTextResponse(
-      f"🎉 Raffle started in #{channel} for {amount} {name}! Type !join to enter (30s)."
-    )
+    return PlainTextResponse(f"🎉 Raffle started in #{channel} for {amount} {name}! Type !join to enter (30s).")
 
 @app.get("/join")
 async def join_raffle(user: str):
