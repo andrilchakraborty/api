@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # ——— Configuration —————————————————————————————————————————————
 SERVICE_URL       = "https://api-jt5t.onrender.com"  # keep-alive ping URL
 CHANNEL           = os.getenv("TWITCH_CHANNEL", "shrimpur")
-BOT_NICK          = os.getenv("TWITCH_BOT_NICK", "shrimpur")  # fallback if not set
-BOT_OAUTH         = os.getenv("TWITCH_OAUTH", "oauth:xaz44k12jaiufen1ngyme5bn0lyhca")  # fallback if not set
+BOT_NICK          = os.getenv("TWITCH_BOT_NICK", "shrimpur")
+BOT_OAUTH         = os.getenv("TWITCH_OAUTH", "oauth:xaz44k12jaiufen1ngyme5bn0lyhca")
 REWARD_INTERVAL   = int(os.getenv("REWARD_INTERVAL", 300))
 REWARD_AMOUNT     = int(os.getenv("REWARD_AMOUNT", 100))
 DB_FILE           = "shrimp.db"
@@ -56,12 +56,11 @@ async def add_user_points(user: str, amount: int):
 
 init_db()
 
-# ——— IRC-based chatter fetcher ————————————————————————————————————
+# ——— IRC-based chatter fetcher (authenticated!) —————————————————————
 async def fetch_chatters_irc() -> set:
     reader, writer = await asyncio.open_connection('irc.chat.twitch.tv', 6667)
-    nick = f'justinfan{random.randint(1000,9999)}'
-    # request membership capability *before* JOIN
-    writer.write(f"NICK {nick}\r\n".encode())
+    writer.write(f"PASS {BOT_OAUTH}\r\n".encode())
+    writer.write(f"NICK {BOT_NICK}\r\n".encode())
     writer.write("CAP REQ :twitch.tv/membership\r\n".encode())
     writer.write(f"JOIN #{CHANNEL}\r\n".encode())
     await writer.drain()
@@ -76,13 +75,11 @@ async def fetch_chatters_irc() -> set:
             writer.write("PONG :tmi.twitch.tv\r\n".encode())
             await writer.drain()
         elif " 353 " in text:
-            # NAMES list
             parts = text.split(" :", 1)
             if len(parts) == 2:
                 for raw in parts[1].split():
                     chatters.add(raw.lstrip("@+%~&"))
         elif " 366 " in text:
-            # end of NAMES list
             break
 
     writer.close()
@@ -91,7 +88,7 @@ async def fetch_chatters_irc() -> set:
 
 # ——— Background reward loop ——————————————————————————————————————
 @app.on_event("startup")
-def start_reward_loop():
+async def start_reward_loop():
     async def loop_rewards():
         while True:
             try:
@@ -198,7 +195,9 @@ async def add_points(user: str, amount: int):
     return PlainTextResponse(f"✅ {user} now has {get_points(user)} shrimp points!")
 
 @app.get("/addall")
-async def addall(amount: int = REWARD_AMOUNT):
+async def addall(amount: int):
+    if amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
     chatters = await fetch_chatters_irc()
     for u in chatters:
         await add_user_points(u, amount)
@@ -210,7 +209,7 @@ async def addall(amount: int = REWARD_AMOUNT):
 async def points(user: str):
     return PlainTextResponse(f"{user}, you have {get_points(user)} shrimp points.")
 
-# ——— Games —————————————————————————————————————————————————————
+# ——— Gamble with multipliers —————————————————————————————————————
 @app.get("/gamble")
 async def gamble(user: str, wager: int):
     if wager <= 0:
@@ -219,32 +218,21 @@ async def gamble(user: str, wager: int):
     if wager > current:
         return PlainTextResponse(f"❌ {user}, you only have {current} shrimp points!")
     await add_user_points(user, -wager)
-    choice = random.choice(["coinflip", "dice", "roulette"])
-    anim   = {"coinflip":"🪙 Flipping...","dice":"🎲 Rolling...","roulette":"🎡 Spinning..."}[choice]
-    await asyncio.sleep(1)
 
-    if choice == "coinflip":
-        win, detail = random.choice([(True,"Heads"),(False,"Tails")])
-    elif choice == "dice":
-        roll = random.randint(1,6)
-        win = roll >= 4
-        detail = f"Rolled {roll}"
-    else:
-        spin = random.randint(0,36)
-        win = (spin != 0 and spin % 2 == 0)
-        detail = f"Landed on {spin}"
+    multipliers = [1, 5, 10, 20, 50]
+    weights     = [20, 50, 15, 10, 5]  # e.g. 50% chance of ×5
+    multiplier  = random.choices(multipliers, weights=weights, k=1)[0]
+    payout      = wager * multiplier
+    await add_user_points(user, payout)
 
-    payout = wager * 2 if win else 0
-    if payout:
-        await add_user_points(user, payout)
     final = get_points(user)
-    sym = "🎉" if win else "💔"
-    res = "won" if win else "lost"
-
-    return PlainTextResponse(
-      f"{anim}\n{sym} {user} {res} {wager} on {choice.upper()} ({detail})!\n" +
-      f"Final balance: {final} shrimp points."
+    sym   = "🎉" if multiplier > 1 else "😐"
+    msg   = (
+        f"{sym} {user} gambled {wager} shrimp points and hit a ×{multiplier} multiplier!\n"
+        f"Payout: {payout} points.\n"
+        f"Final balance: {final} shrimp points."
     )
+    return PlainTextResponse(msg)
 
 @app.get("/slots")
 async def slots(user: str, wager: int):
@@ -253,29 +241,39 @@ async def slots(user: str, wager: int):
     current = get_points(user)
     if wager > current:
         return PlainTextResponse(f"❌ {user}, you only have {current} shrimp points!")
+    # withdraw the wager
     await add_user_points(user, -wager)
 
-    symbols = ["🍒","🍋","🔔","🍉","⭐","🍀"]
+    # spin the reels
+    symbols = ["🍒", "🍋", "🔔", "🍉", "⭐", "🍀"]
     reels = [random.choice(symbols) for _ in range(3)]
     await asyncio.sleep(1)
 
-    if len(set(reels)) == 1:
-        payout = wager * 5
-        await add_user_points(user, payout)
-        result = f"💰 Jackpot! You won {payout}!"
-    elif len(set(reels)) == 2:
-        payout = wager * 2
-        await add_user_points(user, payout)
-        result = f"😊 You matched two! You won {payout}!"
-    else:
-        result = f"💔 No match. You lost {wager}."
-    final = get_points(user)
+    # define possible multipliers and their weights
+    multipliers = [0, 1, 2, 5, 10, 20]
+    weights     = [50, 20, 15, 10, 4, 1]  # heavy chance to lose or small win
+    multiplier  = random.choices(multipliers, weights=weights, k=1)[0]
+    payout      = wager * multiplier
 
+    # apply payout
+    if payout > 0:
+        await add_user_points(user, payout)
+        if multiplier == 1:
+            result = f"😐 You got your wager back (×1)."
+        else:
+            result = f"🎉 You hit a ×{multiplier} multiplier and won {payout} points!"
+    else:
+        result = f"💔 No win this time. You lost your wager of {wager}."
+
+    final = get_points(user)
     return PlainTextResponse(
-      f"🎰 {' | '.join(reels)} 🎰\n{result}\n" +
-      f"Final balance: {final} shrimp points."
+        f"🎰 {' | '.join(reels)} 🎰\n"
+        f"{result}\n"
+        f"Final balance: {final} shrimp points."
     )
 
+
+# ——— Leaderboard —————————————————————————————————————————————
 @app.get("/leaderboard")
 async def leaderboard(limit: int = 10):
     conn = sqlite3.connect(DB_FILE)
@@ -285,7 +283,7 @@ async def leaderboard(limit: int = 10):
     conn.close()
     if not rows:
         return PlainTextResponse("No shrimp points yet.")
-    lines = [f"{i+1}. {u} — {p} shrimp" for i,(u,p) in enumerate(rows)]
+    lines = [f"{u} — {p}" for (u, p) in rows]
     return PlainTextResponse("🏆 Shrimp Leaderboard 🏆\n" + "\n".join(lines))
 
 @app.get("/ping")
