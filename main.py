@@ -45,22 +45,7 @@ def init_db():
         points_name  TEXT NOT NULL
       )
     """)
-    conn.execute("""
-      CREATE TABLE IF NOT EXISTS polls (
-        channel     TEXT PRIMARY KEY,
-        question    TEXT NOT NULL,
-        options     TEXT NOT NULL
-      )
-    """)
-    conn.execute("""
-      CREATE TABLE IF NOT EXISTS bets (
-        channel     TEXT NOT NULL,
-        username    TEXT NOT NULL,
-        answer      TEXT NOT NULL,
-        amount      INTEGER NOT NULL,
-        PRIMARY KEY(channel, username)
-      )
-    """)
+    # ensure default channel has an entry
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name)
       VALUES(?, ?)
@@ -71,30 +56,6 @@ def init_db():
 init_db()
 
 # ——— Helpers —————————————————————————————————————————————————————
-def get_points(user: str, channel: str) -> int:
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT points FROM users WHERE channel = ? AND username = ?", (channel, user))
-    row = c.fetchone(); conn.close()
-    return row[0] if row else 0
-
-async def add_points(user: str, channel: str, amount: int):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("""
-      INSERT INTO users(channel, username, points)
-      VALUES(?, ?, ?)
-      ON CONFLICT(channel, username) DO UPDATE
-        SET points = points + ?
-    """, (channel, user, amount, amount))
-    conn.commit(); conn.close()
-
-def get_currency(channel: str) -> str:
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT points_name FROM settings WHERE channel = ?", (channel,))
-    row = c.fetchone(); conn.close()
-    return row[0] if row else "points"
 def get_points_table(user: str, channel: str) -> int:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -455,62 +416,3 @@ async def join_raffle(user: str):
 @app.get("/ping")
 async def ping():
     return {"status": "alive"}
-    
-# ——— /poll ———————————————————————————————————————————————————
-@app.get("/poll")
-async def poll(channel: str, raw: str):
-    parts = [p.strip() for p in raw.split("|")]
-    if len(parts)<3:
-        raise HTTPException(400,"Need question|opt1|opt2")
-    q, opts = parts[0], ",".join(parts[1:])
-    conn = sqlite3.connect(DB_FILE); c=conn.cursor()
-    c.execute("DELETE FROM bets WHERE channel=?", (channel,))
-    c.execute("""
-      INSERT INTO polls(channel,question,options)
-      VALUES(?,?,?)
-      ON CONFLICT(channel) DO UPDATE
-        SET question=excluded.question,options=excluded.options
-    """,(channel,q,opts))
-    conn.commit(); conn.close()
-    return PlainTextResponse(f"✅ Poll in {channel}: {q} — opts: {', '.join(parts[1:])}")
-
-# ——— /bet ———————————————————————————————————————————————————
- @app.get("/bet")
- async def bet(user: str, channel: str, answer: str, amount: int):
-     current = get_points(user, channel)
-     if amount <= 0 or amount > current:
-         raise HTTPException(400, "Invalid bet")
-     conn = sqlite3.connect(DB_FILE); c = conn.cursor()
-     c.execute("SELECT options FROM polls WHERE channel=?", (channel,))
-     row = c.fetchone()
-     if not row or answer not in row[0].split(","):
-         conn.close(); raise HTTPException(400, "Invalid or no poll")
-
-    await add_points(user, channel, -amount)
-    # use the helper that actually deducts/awards points
-    await add_user_points(user, channel, -amount)
-
-     c.execute(
-         "REPLACE INTO bets(channel,username,answer,amount) VALUES(?,?,?,?)",
-         (channel, user, answer, amount)
-     )
-     conn.commit(); conn.close()
-     cur = get_currency(channel)
-     return PlainTextResponse(f"✅ {user} bet {amount} {cur} on '{answer}'")
-# ——— /payup —————————————————————————————————————————————————
-@app.get("/payup")
-async def payup(channel: str, answer: str):
-    conn=sqlite3.connect(DB_FILE); c=conn.cursor()
-    c.execute("SELECT username,amount FROM bets WHERE channel=? AND answer=?", (channel,answer))
-    winners=c.fetchall()
-    if not winners:
-        conn.close(); return PlainTextResponse(f"No winners for '{answer}'")
-    cur=get_currency(channel)
-    for u,amt in winners:
-        asyncio.create_task(add_points(u, channel, amt*2))
-    c.execute("DELETE FROM bets WHERE channel=?", (channel,))
-    c.execute("DELETE FROM polls WHERE channel=?", (channel,))
-    conn.commit(); conn.close()
-    names=", ".join(u for u,_ in winners)
-    return PlainTextResponse(f"🎉 Payup: {names} each won double their bet ({cur})")
-    
