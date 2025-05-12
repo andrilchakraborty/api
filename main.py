@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # ——— Configuration —————————————————————————————————————————————
 SERVICE_URL       = "https://api-jt5t.onrender.com"  # keep-alive ping URL
 CHANNEL           = os.getenv("TWITCH_CHANNEL", "shrimpur")
-BOT_NICK          = os.getenv("TWITCH_BOT_NICK")      # e.g. "mybotname"
-BOT_OAUTH         = os.getenv("TWITCH_OAUTH_TOKEN")   # e.g. "oauth:abcd1234"
+BOT_NICK          = os.getenv("TWITCH_BOT_NICK", "shrimpur")  # fallback if not set
+BOT_OAUTH         = os.getenv("TWITCH_OAUTH", "oauth:xaz44k12jaiufen1ngyme5bn0lyhca")  # fallback if not set
 REWARD_INTERVAL   = int(os.getenv("REWARD_INTERVAL", 300))
 REWARD_AMOUNT     = int(os.getenv("REWARD_AMOUNT", 100))
 DB_FILE           = "shrimp.db"
