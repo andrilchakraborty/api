@@ -24,12 +24,15 @@
       margin-bottom: 2rem;
       color: #a1a1a3;
     }
+
     /* Grid */
     .grid {
       display: grid;
       gap: 1.5rem;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      align-items: stretch;           /* make all cards equal height */
     }
+
     /* Card */
     .card {
       background: #16171b;
@@ -38,12 +41,17 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.6);
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
+      justify-content: flex-start;   /* stack from top */
+      height: 100%;                   /* fill grid cell */
     }
     .card h2 {
       font-size: 1.5rem;
       margin-bottom: 0.5rem;
       color: #f25f4c;
+    }
+    .card p {
+      color: #c1c1c3;
+      margin-bottom: 1rem;            /* consistent spacing */
     }
     .card code, .card pre {
       display: block;
@@ -53,10 +61,6 @@
       margin: 0.5rem 0 1rem;
       font-family: Consolas, monospace;
       font-size: 0.9rem;
-    }
-    .card p {
-      flex-grow: 1;
-      color: #c1c1c3;
     }
     .card .params {
       margin-bottom: 1rem;
@@ -72,14 +76,21 @@
       font-family: Consolas, monospace;
       font-size: 0.9rem;
       color: #50fa7b;
-      max-height: 6rem;
-      overflow-y: auto;
+      /* remove clipping & scroll */
+      max-height: none;
+      overflow: visible;
       margin-bottom: 1rem;
     }
     .card .command {
+      margin-top: auto;               /* push to bottom if extra space */
       display: flex;
       align-items: center;
       gap: .5rem;
+    }
+    .card .command code {
+      background: #1f2024;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
     }
     .card .command button {
       background: #f25f4c;
@@ -93,6 +104,7 @@
     .card .command button:active {
       transform: scale(0.98);
     }
+
     /* Footer */
     footer {
       margin-top: 3rem;
@@ -119,13 +131,11 @@
         <li><strong>channel</strong> (string)</li>
       </ul>
       <code>GET /add?user=john&amp;amount=500&amp;channel=foo</code>
-      <div class="sample">
-<pre>{
+      <div class="sample"><pre>{
   "message": "✅ john now has 1500 shrimp points!"
-}</pre>
-      </div>
+}</pre></div>
       <div class="command" data-cmd="!commands add !add $(urlfetch https://api-jt5t.onrender.com/add?user=$(user)&amp;amount=$(count)&amp;channel=$(channel))">
-        <code>!commands add !add $(urlfetch .../add?user=$(user)&amp;amount=$(count)&amp;channel=$(channel))</code>
+        <code>!commands add !add …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
@@ -139,13 +149,11 @@
         <li><strong>channel</strong> (string)</li>
       </ul>
       <code>GET /addall/100?channel=foo</code>
-      <div class="sample">
-<pre>{
+      <div class="sample"><pre>{
   "message": "✅ Awarded 100 shrimp points to 14 chatters in 'foo'."
-}</pre>
-      </div>
-      <div class="command" data-cmd="!commands add !addall $(urlfetch https://api-jt5t.onrender.com/addall/$(querystring)?channel=$(channel))">
-        <code>!commands add !addall $(urlfetch .../addall/$(querystring)?channel=$(channel))</code>
+}</pre></div>
+      <div class="command" data-cmd="!commands add !addall …">
+        <code>!commands add !addall …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
@@ -160,13 +168,11 @@
         <li><strong>channel</strong></li>
       </ul>
       <code>GET /gamble?user=jane&amp;wager=200&amp;channel=foo</code>
-      <div class="sample">
-<pre>{
+      <div class="sample"><pre>{
   "message": "🎉 jane gambled 200 and hit ×5! Payout: 1000 shrimp points."
-}</pre>
-      </div>
-      <div class="command" data-cmd="!commands add !gamble $(urlfetch https://api-jt5t.onrender.com/gamble?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))">
-        <code>!commands add !gamble $(urlfetch .../gamble?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))</code>
+}</pre></div>
+      <div class="command" data-cmd="!commands add !gamble …">
+        <code>!commands add !gamble …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
@@ -181,13 +187,11 @@
         <li><strong>channel</strong></li>
       </ul>
       <code>GET /slots?user=jane&amp;wager=100&amp;channel=foo</code>
-      <div class="sample">
-<pre>{
+      <div class="sample"><pre>{
   "message": "🎰 🍒 | 🍉 | ⭐\n🎉 You hit ×2 and won 200 shrimp points."
-}</pre>
-      </div>
-      <div class="command" data-cmd="!commands add !slots $(urlfetch https://api-jt5t.onrender.com/slots?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))">
-        <code>!commands add !slots $(urlfetch .../slots?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))</code>
+}</pre></div>
+      <div class="command" data-cmd="!commands add !slots …">
+        <code>!commands add !slots …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
@@ -201,16 +205,14 @@
         <li><strong>channel</strong></li>
       </ul>
       <code>GET /leaderboard?limit=10&amp;channel=foo</code>
-      <div class="sample">
-<pre>{
+      <div class="sample"><pre>{
   "leaderboard": [
     {"user":"alice","points":2500},
     {"user":"bob","points":1800}
   ]
-}</pre>
-      </div>
-      <div class="command" data-cmd="!commands add !leaderboard $(urlfetch https://api-jt5t.onrender.com/leaderboard?limit=$(count)&amp;channel=$(channel))">
-        <code>!commands add !leaderboard $(urlfetch .../leaderboard?limit=$(count)&amp;channel=$(channel))</code>
+}</pre></div>
+      <div class="command" data-cmd="!commands add !leaderboard …">
+        <code>!commands add !leaderboard …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
@@ -224,13 +226,11 @@
         <li><strong>name</strong> (string)</li>
       </ul>
       <code>GET /setpoints?channel=foo&amp;name=stars</code>
-      <div class="sample">
-<pre>{
+      <div class="sample"><pre>{
   "message": "✅ Points currency set to “stars”!"
-}</pre>
-      </div>
-      <div class="command" data-cmd="!commands add !setpoints $(urlfetch https://api-jt5t.onrender.com/setpoints?channel=$(channel)&amp;name=$(querystring))">
-        <code>!commands add !setpoints $(urlfetch .../setpoints?channel=$(channel)&amp;name=$(querystring))</code>
+}</pre></div>
+      <div class="command" data-cmd="!commands add !setpoints …">
+        <code>!commands add !setpoints …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
@@ -244,13 +244,11 @@
         <li><strong>channel</strong></li>
       </ul>
       <code>GET /raffle?amount=500&amp;channel=foo</code>
-      <div class="sample">
-<pre>{
+      <div class="sample"><pre>{
   "message": "🎉 Raffle started in #foo for 500 shrimp points!"
-}</pre>
-      </div>
-      <div class="command" data-cmd="!commands add !raffle $(urlfetch https://api-jt5t.onrender.com/raffle?amount=$(count)&amp;channel=$(channel))">
-        <code>!commands add !raffle $(urlfetch .../raffle?amount=$(count)&amp;channel=$(channel))</code>
+}</pre></div>
+      <div class="command" data-cmd="!commands add !raffle …">
+        <code>!commands add !raffle …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
