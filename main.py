@@ -2,7 +2,6 @@ import os
 import sqlite3
 import random
 import asyncio
-import random 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -11,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Configuration
 SERVICE_URL = "https://api-jt5t.onrender.com"
-CHANNEL = os.getenv("TWITCH_CHANNEL", "shrimpur")  # ensure TWITCH_CHANNEL is set
+CHANNEL = os.getenv("TWITCH_CHANNEL", "shrimpur")  # e.g. "crownedapex"
 REWARD_INTERVAL = int(os.getenv("REWARD_INTERVAL", 300))  # seconds between chat rewards
 REWARD_AMOUNT = int(os.getenv("REWARD_AMOUNT", 100))    # points per reward
 
@@ -96,6 +95,24 @@ async def add_points(user: str, amount: int):
     await add_user_points(user, amount)
     new = get_points(user)
     return PlainTextResponse(f"✅ {user} now has {new} shrimp points!")
+
+@app.get("/addall")
+async def addall(amount: int = REWARD_AMOUNT):
+    """Award specified points to every active chatter."""
+    try:
+        async with httpx.AsyncClient() as client:
+            url = f"https://tmi.twitch.tv/group/user/{CHANNEL}/chatters"
+            resp = await client.get(url)
+            data = resp.json()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to fetch chatters: {e}")
+    chatters = []
+    for role in ("broadcaster", "moderators", "vips", "viewers"):
+        chatters.extend(data.get("chatters", {}).get(role, []))
+    unique = set(chatters)
+    for user in unique:
+        await add_user_points(user, amount)
+    return PlainTextResponse(f"✅ Awarded {amount} shrimp points to {len(unique)} chatters.")
 
 @app.get("/points")
 async def points(user: str):
