@@ -475,23 +475,28 @@ async def poll(channel: str, raw: str):
     return PlainTextResponse(f"✅ Poll in {channel}: {q} — opts: {', '.join(parts[1:])}")
 
 # ——— /bet ———————————————————————————————————————————————————
-@app.get("/bet")
-async def bet(user: str, channel: str, answer: str, amount: int):
-    current = get_points(user, channel)
-    if amount<=0 or amount>current:
-        raise HTTPException(400,"Invalid bet")
-    conn=sqlite3.connect(DB_FILE); c=conn.cursor()
-    c.execute("SELECT options FROM polls WHERE channel=?", (channel,))
-    row=c.fetchone()
-    if not row or answer not in row[0].split(","):
-        conn.close(); raise HTTPException(400,"Invalid or no poll")
-    await add_points(user, channel, -amount)
-    c.execute("REPLACE INTO bets(channel,username,answer,amount) VALUES(?,?,?,?)",
-              (channel,user,answer,amount))
-    conn.commit(); conn.close()
-    cur=get_currency(channel)
-    return PlainTextResponse(f"✅ {user} bet {amount} {cur} on '{answer}'")
+ @app.get("/bet")
+ async def bet(user: str, channel: str, answer: str, amount: int):
+     current = get_points(user, channel)
+     if amount <= 0 or amount > current:
+         raise HTTPException(400, "Invalid bet")
+     conn = sqlite3.connect(DB_FILE); c = conn.cursor()
+     c.execute("SELECT options FROM polls WHERE channel=?", (channel,))
+     row = c.fetchone()
+     if not row or answer not in row[0].split(","):
+         conn.close(); raise HTTPException(400, "Invalid or no poll")
 
+    await add_points(user, channel, -amount)
+    # use the helper that actually deducts/awards points
+    await add_user_points(user, channel, -amount)
+
+     c.execute(
+         "REPLACE INTO bets(channel,username,answer,amount) VALUES(?,?,?,?)",
+         (channel, user, answer, amount)
+     )
+     conn.commit(); conn.close()
+     cur = get_currency(channel)
+     return PlainTextResponse(f"✅ {user} bet {amount} {cur} on '{answer}'")
 # ——— /payup —————————————————————————————————————————————————
 @app.get("/payup")
 async def payup(channel: str, answer: str):
