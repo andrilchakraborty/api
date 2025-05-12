@@ -29,6 +29,7 @@ app.add_middleware(
 # ——— Database initialization —————————————————————————————————————
 def init_db():
     conn = sqlite3.connect(DB_FILE)
+    # users table
     conn.execute("""
       CREATE TABLE IF NOT EXISTS users (
         channel     TEXT NOT NULL,
@@ -37,16 +38,19 @@ def init_db():
         PRIMARY KEY(channel, username)
       )
     """)
+    # settings table: now with reward_amount
     conn.execute("""
       CREATE TABLE IF NOT EXISTS settings (
-        channel      TEXT PRIMARY KEY,
-        points_name  TEXT NOT NULL
+        channel        TEXT PRIMARY KEY,
+        points_name    TEXT NOT NULL,
+        reward_amount  INTEGER NOT NULL DEFAULT ?
       )
-    """)
+    """, (REWARD_AMOUNT,))
+    # ensure default channel has an entry
     conn.execute("""
-      INSERT OR IGNORE INTO settings(channel, points_name)
-      VALUES(?, ?)
-    """, (DEFAULT_CHANNEL, "shrimp points"))
+      INSERT OR IGNORE INTO settings(channel, points_name, reward_amount)
+      VALUES(?, ?, ?)
+    """, (DEFAULT_CHANNEL, "shrimp points", REWARD_AMOUNT))
     conn.commit()
     conn.close()
 
@@ -124,18 +128,18 @@ async def fetch_chatters_irc(channel: str) -> set:
     await writer.wait_closed()
     return chatters
 
-# ——— Background rewards ——————————————————————————————————————
 @app.on_event("startup")
 async def start_reward_loop():
     async def loop_rewards():
         while True:
             try:
-                chan = DEFAULT_CHANNEL
-                name = get_points_name(chan)
+                chan    = DEFAULT_CHANNEL
+                name    = get_points_name(chan)
+                reward  = get_reward_amount(chan)
                 chatters = await fetch_chatters_irc(chan)
                 for u in chatters:
-                    await add_user_points(u, chan, REWARD_AMOUNT)
-                print(f"Rewarded {len(chatters)} users {REWARD_AMOUNT} {name} each in {chan}.")
+                    await add_user_points(u, chan, reward)
+                print(f"Rewarded {len(chatters)} users {reward} {name} each in {chan}.")
             except Exception as e:
                 print("Reward loop error:", e)
             await asyncio.sleep(REWARD_INTERVAL)
@@ -159,6 +163,17 @@ async def schedule_ping():
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/setreward")
+async def setreward(channel: str, amount: int):
+    """
+    Set how many points each chatter earns every interval.
+    Call: /setreward?channel=shrimpur&amount=150
+    """
+    if amount < 0:
+        raise HTTPException(400, "Amount must be non-negative")
+    await set_reward_amount(channel, amount)
+    return PlainTextResponse(f"✅ Reward per interval in '{channel}' set to {amount} points.")
 
 # ——— /setpoints ———————————————————————————————————————————————
 @app.get("/setpoints")
