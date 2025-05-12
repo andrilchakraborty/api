@@ -29,7 +29,6 @@ app.add_middleware(
 # ——— Database initialization —————————————————————————————————————
 def init_db():
     conn = sqlite3.connect(DB_FILE)
-    # users table
     conn.execute("""
       CREATE TABLE IF NOT EXISTS users (
         channel     TEXT NOT NULL,
@@ -38,7 +37,6 @@ def init_db():
         PRIMARY KEY(channel, username)
       )
     """)
-    # settings table: with inlined default for reward_amount
     conn.execute(f"""
       CREATE TABLE IF NOT EXISTS settings (
         channel        TEXT PRIMARY KEY,
@@ -46,7 +44,6 @@ def init_db():
         reward_amount  INTEGER NOT NULL DEFAULT {REWARD_AMOUNT}
       )
     """)
-    # ensure default channel has an entry
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name, reward_amount)
       VALUES(?, ?, ?)
@@ -186,10 +183,6 @@ async def read_index(request: Request):
 # ——— /setreward ———————————————————————————————————————————————
 @app.get("/setreward")
 async def setreward(channel: str, amount: int):
-    """
-    Set how many points each chatter earns every interval.
-    Call: /setreward?channel=shrimpur&amount=150
-    """
     if amount < 0:
         raise HTTPException(400, "Amount must be non-negative")
     await set_reward_amount(channel, amount)
@@ -198,10 +191,6 @@ async def setreward(channel: str, amount: int):
 # ——— /setpoints ———————————————————————————————————————————————
 @app.get("/setpoints")
 async def setpoints(channel: str, name: str):
-    """
-    Rename the points currency for a specific channel.
-    Must pass both `channel` and `name` in query.
-    """
     if not name.strip():
         raise HTTPException(400, "Must provide non-empty name")
     await set_points_name(channel, name.strip())
@@ -228,17 +217,16 @@ async def add_points(user: str, amount: int, channel: str = DEFAULT_CHANNEL):
 # ——— /addall —————————————————————————————————————————————
 @app.get("/addall")
 async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
-    """
-    Award `amount` points to *every* chatter in `channel`.
-    Call it like: /addall?amount=100&channel=yourchannel
-    """
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
     chatters = await fetch_chatters_irc(channel)
+    if channel not in chatters:
+        chatters.add(channel)
     for u in chatters:
         await add_user_points(u, channel, amount)
-    name = get_points_name(channel)
-    return PlainTextResponse(f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'.")
+    name  = get_points_name(channel)
+    count = len(chatters)
+    return PlainTextResponse(f"✅ Awarded {amount} {name} to {count} chatters in '{channel}'.")
 
 # ——— /leaderboard —————————————————————————————————————————————
 @app.get("/leaderboard")
@@ -255,11 +243,9 @@ async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
     if not rows:
         return PlainTextResponse(f"No points yet in '{channel}'.")
 
-    # determine padding so columns line up
     max_user_len = max(len(u) for u, _ in rows)
     header = f"{'User'.ljust(max_user_len)}   Points"
     separator = "-" * len(header)
-
     lines = [f"{u.ljust(max_user_len)}   {p}" for u, p in rows]
     output = "\n".join([header, separator] + lines)
     return PlainTextResponse("🏆 Leaderboard 🏆\n" + output)
@@ -277,6 +263,8 @@ def parse_wager(wager_str: str, current: int) -> int:
 @app.get("/gamble")
 async def gamble(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
+    if current <= 0:
+        return PlainTextResponse(f"❌ {user}, you have no {get_points_name(channel)}!")
     amount  = parse_wager(wager, current)
     if amount <= 0:
         raise HTTPException(400, "Wager must be positive")
@@ -304,6 +292,8 @@ async def gamble(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
 @app.get("/slots")
 async def slots(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
+    if current <= 0:
+        return PlainTextResponse(f"❌ {user}, you have no {get_points_name(channel)}!")
     amount  = parse_wager(wager, current)
     if amount <= 0:
         raise HTTPException(400, "Wager must be positive")
@@ -342,6 +332,8 @@ async def slots(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
 @app.get("/blackjack")
 async def blackjack(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     current = get_points_table(user, channel)
+    if current <= 0:
+        return PlainTextResponse(f"❌ {user}, you have no {get_points_name(channel)}!")
     if wager.lower() == "all":
         wager_amount = current
     else:
