@@ -21,8 +21,10 @@ DB_FILE           = "shrimp.db"
 # ——— FastAPI setup ——————————————————————————————————————————————
 app = FastAPI()
 
+# Mount static files (optional)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Jinja2 templates folder must contain your index.html
+# Jinja2 templates
 templates = Jinja2Templates(directory="templates")
 
 app.add_middleware(
@@ -46,6 +48,7 @@ def init_db():
         points_name  TEXT NOT NULL
       )
     """)
+    # ensure default channel has an entry
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name)
       VALUES(?, ?)
@@ -60,7 +63,8 @@ def get_points_table(user: str, channel: str) -> int:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT points FROM users WHERE channel = ? AND username = ?", (channel, user))
-    row = c.fetchone(); conn.close()
+    row = c.fetchone()
+    conn.close()
     return row[0] if row else 0
 
 async def add_user_points(user: str, channel: str, amount: int):
@@ -72,13 +76,15 @@ async def add_user_points(user: str, channel: str, amount: int):
       ON CONFLICT(channel, username) DO UPDATE
         SET points = points + ?
     """, (channel, user, amount, amount))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def get_points_name(channel: str) -> str:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT points_name FROM settings WHERE channel = ?", (channel,))
-    row = c.fetchone(); conn.close()
+    row = c.fetchone()
+    conn.close()
     return row[0] if row else "points"
 
 async def set_points_name(channel: str, name: str):
@@ -90,7 +96,8 @@ async def set_points_name(channel: str, name: str):
       ON CONFLICT(channel) DO UPDATE
         SET points_name = excluded.points_name
     """, (channel, name))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 # ——— IRC chatter fetcher —————————————————————————————————————
 async def fetch_chatters_irc(channel: str) -> set:
@@ -98,15 +105,18 @@ async def fetch_chatters_irc(channel: str) -> set:
     writer.write(f"PASS {BOT_OAUTH}\r\n".encode())
     writer.write(f"NICK {BOT_NICK}\r\n".encode())
     writer.write("CAP REQ :twitch.tv/membership\r\n".encode())
-    writer.write(f"JOIN #{channel}\r\n".encode()); await writer.drain()
+    writer.write(f"JOIN #{channel}\r\n".encode())
+    await writer.drain()
 
     chatters = set()
     while True:
         line = await reader.readline()
-        if not line: break
+        if not line:
+            break
         text = line.decode(errors='ignore').strip()
         if text.startswith("PING"):
-            writer.write("PONG :tmi.twitch.tv\r\n".encode()); await writer.drain()
+            writer.write("PONG :tmi.twitch.tv\r\n".encode())
+            await writer.drain()
         elif " 353 " in text:
             parts = text.split(" :", 1)
             if len(parts) == 2:
@@ -115,7 +125,8 @@ async def fetch_chatters_irc(channel: str) -> set:
         elif " 366 " in text:
             break
 
-    writer.close(); await writer.wait_closed()
+    writer.close()
+    await writer.wait_closed()
     return chatters
 
 # ——— Background rewards ——————————————————————————————————————
@@ -142,23 +153,26 @@ async def schedule_ping():
         import httpx
         async with httpx.AsyncClient(timeout=5) as client:
             while True:
-                try: await client.get(f"{SERVICE_URL}/ping")
-                except: pass
+                try:
+                    await client.get(f"{SERVICE_URL}/ping")
+                except:
+                    pass
                 await asyncio.sleep(120)
     asyncio.create_task(pinger())
 
 # ——— Serve index.html ——————————————————————————————————————————
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
-    """
-    Renders templates/index.html at the root URL.
-    """
     return templates.TemplateResponse("index.html", {"request": request})
 
 # ——— /setpoints ———————————————————————————————————————————————
 @app.get("/setpoints")
-async def setpoints(channel: str = DEFAULT_CHANNEL, name: str = None):
-    if not name or not name.strip():
+async def setpoints(channel: str, name: str):
+    """
+    Rename the points currency for a specific channel.
+    Must pass both `channel` and `name` in query.
+    """
+    if not name.strip():
         raise HTTPException(400, "Must provide non-empty name")
     await set_points_name(channel, name.strip())
     return PlainTextResponse(f"✅ Points currency in '{channel}' set to “{name.strip()}”!")
@@ -194,9 +208,11 @@ async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
 # ——— /leaderboard —————————————————————————————————————————————
 @app.get("/leaderboard")
 async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
-    conn = sqlite3.connect(DB_FILE); c = conn.cursor()
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
     c.execute("SELECT username, points FROM users WHERE channel = ? ORDER BY points DESC LIMIT ?", (channel, limit))
-    rows = c.fetchall(); conn.close()
+    rows = c.fetchall()
+    conn.close()
 
     name = get_points_name(channel)
     if not rows:
@@ -312,12 +328,9 @@ async def blackjack(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     player_total = best_total(player)
     dealer_total = best_total(dealer)
 
-    # Player hits until 17+
     while player_total < 17:
         player.append(draw_card())
         player_total = best_total(player)
-
-    # Dealer hits until 17+
     while dealer_total < 17:
         dealer.append(draw_card())
         dealer_total = best_total(dealer)
@@ -367,10 +380,13 @@ async def raffle_timer(channel: str):
         w.write(f"PASS {BOT_OAUTH}\r\n".encode())
         w.write(f"NICK {BOT_NICK}\r\n".encode())
         w.write("CAP REQ :twitch.tv/membership twitch.tv/tags twitch.tv/commands\r\n".encode())
-        w.write(f"JOIN #{channel}\r\n".encode()); await w.drain()
+        w.write(f"JOIN #{channel}\r\n".encode())
+        await w.drain()
         await asyncio.sleep(1)
-        w.write(f"PRIVMSG #{channel} :{announcement}\r\n".encode()); await w.drain()
-        w.close(); await w.wait_closed()
+        w.write(f"PRIVMSG #{channel} :{announcement}\r\n".encode())
+        await w.drain()
+        w.close()
+        await w.wait_closed()
     except:
         pass
 
