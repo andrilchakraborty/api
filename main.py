@@ -11,8 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 # Configuration
 SERVICE_URL     = "https://api-jt5t.onrender.com"           # for keep-alive ping
 CHANNEL         = os.getenv("TWITCH_CHANNEL", "shrimpur")
-REWARD_INTERVAL = int(os.getenv("REWARD_INTERVAL", 300))    # how often to reward
-REWARD_AMOUNT   = int(os.getenv("REWARD_AMOUNT", 100))      # default reward amount
+BOT_NICK        = os.getenv("BOT_NICK")                     # your bot’s username
+BOT_OAUTH       = os.getenv("BOT_OAUTH")                    # oauth: token from Twitch
+REWARD_INTERVAL = int(os.getenv("REWARD_INTERVAL", 300))    # seconds between rewards
+REWARD_AMOUNT   = int(os.getenv("REWARD_AMOUNT", 100))      # points per reward
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -101,7 +103,6 @@ def start_reward_loop():
             except Exception as e:
                 print("Reward loop error:", e)
             await asyncio.sleep(REWARD_INTERVAL)
-
     asyncio.create_task(loop_rewards())
 
 # ——— Keep-alive ping ——————————————————————————————————————————
@@ -129,18 +130,18 @@ raffle = {
 }
 
 async def raffle_timer():
-    # Wait 30 seconds for people to join
+    # Wait 30 seconds for joins
     await asyncio.sleep(30)
 
     entrants = list(raffle["participants"])
     winners = random.sample(entrants, k=min(3, len(entrants))) if entrants else []
     split   = raffle["amount"] // max(1, len(winners))
 
-    # Award the points
+    # Award points
     for w in winners:
         await add_user_points(w, split)
 
-    # Build the announcement
+    # Compose announcement
     if winners:
         winners_str = ", ".join(winners)
         announcement = (
@@ -150,11 +151,12 @@ async def raffle_timer():
     else:
         announcement = "😢 Raffle ended with no entrants."
 
-    # Send to Twitch chat via IRC
+    # Announce in chat via authenticated IRC
     try:
         reader, writer = await asyncio.open_connection('irc.chat.twitch.tv', 6667)
-        nick = f'justinfan{random.randint(1000,9999)}'
-        writer.write(f"NICK {nick}\r\n".encode())
+        writer.write(f"PASS {BOT_OAUTH}\r\n".encode())
+        writer.write(f"NICK {BOT_NICK}\r\n".encode())
+        writer.write(b"CAP REQ :twitch.tv/membership twitch.tv/tags twitch.tv/commands\r\n")
         writer.write(f"JOIN #{CHANNEL}\r\n".encode())
         await writer.drain()
 
@@ -166,7 +168,7 @@ async def raffle_timer():
     except Exception as e:
         print("Failed to announce raffle results:", e)
 
-    # Reset raffle state
+    # Reset
     raffle["active"] = False
     raffle["task"]   = None
     raffle["participants"].clear()
@@ -231,12 +233,15 @@ async def gamble(user: str, wager: int):
     await asyncio.sleep(1)
 
     if choice == "coinflip":
-        win, detail = random.choice([True, False]), None
+        win = random.choice([True, False])
         detail = "Heads" if win else "Tails"
     elif choice == "dice":
-        roll = random.randint(1,6); win = roll >= 4; detail = f"Rolled {roll}"
+        roll = random.randint(1,6)
+        win = roll >= 4
+        detail = f"Rolled {roll}"
     else:
-        spin = random.randint(0,36); win = (spin != 0 and spin % 2 == 0)
+        spin = random.randint(0,36)
+        win = (spin != 0 and spin % 2 == 0)
         detail = f"Landed on {spin}"
 
     payout = wager * 2 if win else 0
@@ -261,14 +266,16 @@ async def slots(user: str, wager: int):
     await add_user_points(user, -wager)
 
     symbols = ["🍒","🍋","🔔","🍉","⭐","🍀"]
-    reels   = [random.choice(symbols) for _ in range(3)]
+    reels = [random.choice(symbols) for _ in range(3)]
     await asyncio.sleep(1)
 
     if reels[0] == reels[1] == reels[2]:
-        payout = wager * 5; await add_user_points(user, payout)
+        payout = wager * 5
+        await add_user_points(user, payout)
         result = f"💰 Jackpot! You won {payout}!"
     elif len(set(reels)) == 2:
-        payout = wager * 2; await add_user_points(user, payout)
+        payout = wager * 2
+        await add_user_points(user, payout)
         result = f"😊 You matched two! You won {payout}!"
     else:
         result = f"💔 No match. You lost {wager}."
