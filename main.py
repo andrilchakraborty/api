@@ -38,14 +38,14 @@ def init_db():
         PRIMARY KEY(channel, username)
       )
     """)
-    # settings table: now with reward_amount
-    conn.execute("""
+    # settings table: with inlined default for reward_amount
+    conn.execute(f"""
       CREATE TABLE IF NOT EXISTS settings (
         channel        TEXT PRIMARY KEY,
         points_name    TEXT NOT NULL,
-        reward_amount  INTEGER NOT NULL DEFAULT ?
+        reward_amount  INTEGER NOT NULL DEFAULT {REWARD_AMOUNT}
       )
-    """, (REWARD_AMOUNT,))
+    """)
     # ensure default channel has an entry
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name, reward_amount)
@@ -89,14 +89,32 @@ async def set_points_name(channel: str, name: str):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
-      INSERT INTO settings(channel, points_name)
-      VALUES(?, ?)
+      INSERT INTO settings(channel, points_name, reward_amount)
+      VALUES(?, ?, ?)
       ON CONFLICT(channel) DO UPDATE
         SET points_name = excluded.points_name
-    """, (channel, name))
+    """, (channel, name, REWARD_AMOUNT))
     conn.commit()
     conn.close()
 
+def get_reward_amount(channel: str) -> int:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT reward_amount FROM settings WHERE channel = ?", (channel,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else REWARD_AMOUNT
+
+async def set_reward_amount(channel: str, amount: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+      UPDATE settings
+      SET reward_amount = ?
+      WHERE channel = ?
+    """, (amount, channel))
+    conn.commit()
+    conn.close()
 
 # ——— IRC chatter fetcher —————————————————————————————————————
 async def fetch_chatters_irc(channel: str) -> set:
@@ -128,14 +146,15 @@ async def fetch_chatters_irc(channel: str) -> set:
     await writer.wait_closed()
     return chatters
 
+# ——— Background rewards ——————————————————————————————————————
 @app.on_event("startup")
 async def start_reward_loop():
     async def loop_rewards():
         while True:
             try:
-                chan    = DEFAULT_CHANNEL
-                name    = get_points_name(chan)
-                reward  = get_reward_amount(chan)
+                chan     = DEFAULT_CHANNEL
+                name     = get_points_name(chan)
+                reward   = get_reward_amount(chan)
                 chatters = await fetch_chatters_irc(chan)
                 for u in chatters:
                     await add_user_points(u, chan, reward)
@@ -164,6 +183,7 @@ async def schedule_ping():
 async def read_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+# ——— /setreward ———————————————————————————————————————————————
 @app.get("/setreward")
 async def setreward(channel: str, amount: int):
     """
@@ -195,10 +215,8 @@ async def points(user: str, channel: str = DEFAULT_CHANNEL):
     return PlainTextResponse(f"{user}, you have {pts} {name} in '{channel}'.")
 
 # ——— /add ————————————————————————————————————————————————
-# ——— /add ————————————————————————————————————————————————
 @app.get("/add")
 async def add_points(user: str, amount: int, channel: str = DEFAULT_CHANNEL):
-    # strip leading '@' if present
     clean_user = user.lstrip("@").strip()
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
@@ -216,18 +234,12 @@ async def addall(amount: int, channel: str = DEFAULT_CHANNEL):
     """
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
-
-    # fetch all current chatters in the channel
     chatters = await fetch_chatters_irc(channel)
     for u in chatters:
         await add_user_points(u, channel, amount)
-
     name = get_points_name(channel)
-    return PlainTextResponse(
-        f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'."
-    )
+    return PlainTextResponse(f"✅ Awarded {amount} {name} to {len(chatters)} chatters in '{channel}'.")
 
-# ——— /leaderboard —————————————————————————————————————————————
 # ——— /leaderboard —————————————————————————————————————————————
 @app.get("/leaderboard")
 async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
@@ -242,10 +254,8 @@ async def leaderboard(limit: int = 10, channel: str = DEFAULT_CHANNEL):
 
     if not rows:
         return PlainTextResponse(f"No points yet in '{channel}'.")
-    # format as "username - points"
     lines = [f"{u} - {p}" for u, p in rows]
     return PlainTextResponse("🏆 Leaderboard 🏆\n" + "\n".join(lines))
-
 
 # ——— /gamble ———————————————————————————————————————————————————
 def parse_wager(wager_str: str, current: int) -> int:
