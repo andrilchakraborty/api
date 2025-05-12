@@ -1,12 +1,275 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shrimp API</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🦐 Shrimp API Documentation</title>
+  <style>
+    /* Base Reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0e10;
+      color: #e1e1e3;
+      font-family: "Segoe UI", sans-serif;
+      line-height: 1.5;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #f25f4c;
+    }
+    p.lead {
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+      color: #a1a1a3;
+    }
+    /* Grid */
+    .grid {
+      display: grid;
+      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+    /* Card */
+    .card {
+      background: #16171b;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: #f25f4c;
+    }
+    .card code, .card pre {
+      display: block;
+      background: #1f2024;
+      padding: 0.5rem;
+      border-radius: 0.25rem;
+      margin: 0.5rem 0 1rem;
+      font-family: Consolas, monospace;
+      font-size: 0.9rem;
+    }
+    .card p {
+      flex-grow: 1;
+      color: #c1c1c3;
+    }
+    .card .params {
+      margin-bottom: 1rem;
+    }
+    .card .params li {
+      list-style: none;
+      margin-bottom: 0.25rem;
+    }
+    .card .sample {
+      background: #1f2024;
+      padding: 0.75rem;
+      border-radius: 0.25rem;
+      font-family: Consolas, monospace;
+      font-size: 0.9rem;
+      color: #50fa7b;
+      max-height: 6rem;
+      overflow-y: auto;
+      margin-bottom: 1rem;
+    }
+    .card .command {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .card .command button {
+      background: #f25f4c;
+      border: none;
+      color: #fff;
+      padding: 0.4rem 0.8rem;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .card .command button:active {
+      transform: scale(0.98);
+    }
+    /* Footer */
+    footer {
+      margin-top: 3rem;
+      text-align: center;
+      color: #555;
+      font-size: 0.9rem;
+    }
+    a { color: #8be9fd; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
 </head>
 <body>
-    <h1>🦐 Shrimp API is live!</h1>
-    <p>Use endpoints: /add, /gamble, /leaderboard</p>
+  <h1>🦐 Shrimp API</h1>
+  <p class="lead">Beautiful, per-channel points REST API. Copy & paste Nightbot commands below.</p>
+
+  <div class="grid">
+    <!-- /add -->
+    <div class="card">
+      <h2>➕ /add</h2>
+      <p>Add points to a user.</p>
+      <ul class="params">
+        <li><strong>user</strong> (string)</li>
+        <li><strong>amount</strong> (int)</li>
+        <li><strong>channel</strong> (string)</li>
+      </ul>
+      <code>GET /add?user=john&amp;amount=500&amp;channel=foo</code>
+      <div class="sample">
+<pre>{
+  "message": "✅ john now has 1500 shrimp points!"
+}</pre>
+      </div>
+      <div class="command" data-cmd="!commands add !add $(urlfetch https://api-jt5t.onrender.com/add?user=$(user)&amp;amount=$(count)&amp;channel=$(channel))">
+        <code>!commands add !add $(urlfetch .../add?user=$(user)&amp;amount=$(count)&amp;channel=$(channel))</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
+    <!-- /addall -->
+    <div class="card">
+      <h2>✨ /addall</h2>
+      <p>Give everyone in chat N points.</p>
+      <ul class="params">
+        <li><strong>amount</strong> (int)</li>
+        <li><strong>channel</strong> (string)</li>
+      </ul>
+      <code>GET /addall/100?channel=foo</code>
+      <div class="sample">
+<pre>{
+  "message": "✅ Awarded 100 shrimp points to 14 chatters in 'foo'."
+}</pre>
+      </div>
+      <div class="command" data-cmd="!commands add !addall $(urlfetch https://api-jt5t.onrender.com/addall/$(querystring)?channel=$(channel))">
+        <code>!commands add !addall $(urlfetch .../addall/$(querystring)?channel=$(channel))</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
+    <!-- /gamble -->
+    <div class="card">
+      <h2>🎲 /gamble</h2>
+      <p>Wager points for random multipliers.</p>
+      <ul class="params">
+        <li><strong>user</strong></li>
+        <li><strong>wager</strong> (int)</li>
+        <li><strong>channel</strong></li>
+      </ul>
+      <code>GET /gamble?user=jane&amp;wager=200&amp;channel=foo</code>
+      <div class="sample">
+<pre>{
+  "message": "🎉 jane gambled 200 and hit ×5! Payout: 1000 shrimp points."
+}</pre>
+      </div>
+      <div class="command" data-cmd="!commands add !gamble $(urlfetch https://api-jt5t.onrender.com/gamble?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))">
+        <code>!commands add !gamble $(urlfetch .../gamble?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
+    <!-- /slots -->
+    <div class="card">
+      <h2>🎰 /slots</h2>
+      <p>Slot machine with weighted multipliers.</p>
+      <ul class="params">
+        <li><strong>user</strong></li>
+        <li><strong>wager</strong> (int)</li>
+        <li><strong>channel</strong></li>
+      </ul>
+      <code>GET /slots?user=jane&amp;wager=100&amp;channel=foo</code>
+      <div class="sample">
+<pre>{
+  "message": "🎰 🍒 | 🍉 | ⭐\n🎉 You hit ×2 and won 200 shrimp points."
+}</pre>
+      </div>
+      <div class="command" data-cmd="!commands add !slots $(urlfetch https://api-jt5t.onrender.com/slots?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))">
+        <code>!commands add !slots $(urlfetch .../slots?user=$(user)&amp;wager=$(count)&amp;channel=$(channel))</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
+    <!-- /leaderboard -->
+    <div class="card">
+      <h2>🏆 /leaderboard</h2>
+      <p>Top users by points.</p>
+      <ul class="params">
+        <li><strong>limit</strong> (int)</li>
+        <li><strong>channel</strong></li>
+      </ul>
+      <code>GET /leaderboard?limit=10&amp;channel=foo</code>
+      <div class="sample">
+<pre>{
+  "leaderboard": [
+    {"user":"alice","points":2500},
+    {"user":"bob","points":1800}
+  ]
+}</pre>
+      </div>
+      <div class="command" data-cmd="!commands add !leaderboard $(urlfetch https://api-jt5t.onrender.com/leaderboard?limit=$(count)&amp;channel=$(channel))">
+        <code>!commands add !leaderboard $(urlfetch .../leaderboard?limit=$(count)&amp;channel=$(channel))</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
+    <!-- /setpoints -->
+    <div class="card">
+      <h2>⚙️ /setpoints</h2>
+      <p>Rename the currency for this channel.</p>
+      <ul class="params">
+        <li><strong>channel</strong></li>
+        <li><strong>name</strong> (string)</li>
+      </ul>
+      <code>GET /setpoints?channel=foo&amp;name=stars</code>
+      <div class="sample">
+<pre>{
+  "message": "✅ Points currency set to “stars”!"
+}</pre>
+      </div>
+      <div class="command" data-cmd="!commands add !setpoints $(urlfetch https://api-jt5t.onrender.com/setpoints?channel=$(channel)&amp;name=$(querystring))">
+        <code>!commands add !setpoints $(urlfetch .../setpoints?channel=$(channel)&amp;name=$(querystring))</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
+    <!-- /raffle -->
+    <div class="card">
+      <h2>🎟️ /raffle</h2>
+      <p>Start a raffle for N points (30 s).</p>
+      <ul class="params">
+        <li><strong>amount</strong> (int)</li>
+        <li><strong>channel</strong></li>
+      </ul>
+      <code>GET /raffle?amount=500&amp;channel=foo</code>
+      <div class="sample">
+<pre>{
+  "message": "🎉 Raffle started in #foo for 500 shrimp points!"
+}</pre>
+      </div>
+      <div class="command" data-cmd="!commands add !raffle $(urlfetch https://api-jt5t.onrender.com/raffle?amount=$(count)&amp;channel=$(channel))">
+        <code>!commands add !raffle $(urlfetch .../raffle?amount=$(count)&amp;channel=$(channel))</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    © 2025 Shrimp API • <a href="/ping">Health Check</a>
+  </footer>
+
+  <script>
+    function copyCmd(btn) {
+      const cmd = btn.parentElement.getAttribute('data-cmd');
+      navigator.clipboard.writeText(cmd)
+        .then(() => {
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = 'Copy', 1000);
+        })
+        .catch(console.error);
+    }
+  </script>
 </body>
 </html>
