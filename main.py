@@ -71,6 +71,30 @@ def init_db():
 init_db()
 
 # ——— Helpers —————————————————————————————————————————————————————
+def get_points(user: str, channel: str) -> int:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT points FROM users WHERE channel = ? AND username = ?", (channel, user))
+    row = c.fetchone(); conn.close()
+    return row[0] if row else 0
+
+async def add_points(user: str, channel: str, amount: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+      INSERT INTO users(channel, username, points)
+      VALUES(?, ?, ?)
+      ON CONFLICT(channel, username) DO UPDATE
+        SET points = points + ?
+    """, (channel, user, amount, amount))
+    conn.commit(); conn.close()
+
+def get_currency(channel: str) -> str:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT points_name FROM settings WHERE channel = ?", (channel,))
+    row = c.fetchone(); conn.close()
+    return row[0] if row else "points"
 def get_points_table(user: str, channel: str) -> int:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
