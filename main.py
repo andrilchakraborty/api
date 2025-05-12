@@ -2,7 +2,6 @@ import os
 import sqlite3
 import random
 import asyncio
-import socket
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -60,13 +59,8 @@ init_db()
 # ——— IRC-based chatter fetcher ————————————————————————————————————
 
 async def fetch_chatters_irc() -> set:
-    """
-    Connects anonymously to Twitch IRC, does NAMES on the channel,
-    and returns a set of all nicknames in chat.
-    """
     reader, writer = await asyncio.open_connection('irc.chat.twitch.tv', 6667)
     nick = f'justinfan{random.randint(1000,9999)}'
-    # IRC handshake
     writer.write(f"NICK {nick}\r\n".encode())
     writer.write(f"JOIN #{CHANNEL}\r\n".encode())
     await writer.drain()
@@ -77,19 +71,15 @@ async def fetch_chatters_irc() -> set:
         if not line:
             break
         text = line.decode(errors='ignore').strip()
-        # respond to PING so we stay connected
         if text.startswith("PING"):
             writer.write("PONG :tmi.twitch.tv\r\n".encode())
             await writer.drain()
-        # names list reply: 
-        #   :tmi.twitch.tv 353 nick = #channel :user1 user2 @mod1 +vip1 ...
         elif " 353 " in text:
             parts = text.split(" :", 1)
             if len(parts) == 2:
                 for raw in parts[1].split():
                     clean = raw.lstrip("@+%~&")
                     chatters.add(clean)
-        # end of names list
         elif " 366 " in text:
             break
 
@@ -112,7 +102,6 @@ def start_reward_loop():
                 print("Reward loop error:", e)
             await asyncio.sleep(REWARD_INTERVAL)
 
-    # fire-and-forget
     asyncio.create_task(loop_rewards())
 
 # ——— Keep-alive ping ——————————————————————————————————————————
@@ -140,17 +129,48 @@ raffle = {
 }
 
 async def raffle_timer():
+    # Wait 30 seconds for people to join
     await asyncio.sleep(30)
+
     entrants = list(raffle["participants"])
     winners = random.sample(entrants, k=min(3, len(entrants))) if entrants else []
-    split = raffle["amount"] // max(1, len(winners))
+    split   = raffle["amount"] // max(1, len(winners))
+
+    # Award the points
     for w in winners:
         await add_user_points(w, split)
-    # reset
+
+    # Build the announcement
+    if winners:
+        winners_str = ", ".join(winners)
+        announcement = (
+            f"🎉 Raffle ended! Winners: {winners_str} "
+            f"each won {split} shrimp points! 🎉"
+        )
+    else:
+        announcement = "😢 Raffle ended with no entrants."
+
+    # Send to Twitch chat via IRC
+    try:
+        reader, writer = await asyncio.open_connection('irc.chat.twitch.tv', 6667)
+        nick = f'justinfan{random.randint(1000,9999)}'
+        writer.write(f"NICK {nick}\r\n".encode())
+        writer.write(f"JOIN #{CHANNEL}\r\n".encode())
+        await writer.drain()
+
+        writer.write(f"PRIVMSG #{CHANNEL} :{announcement}\r\n".encode())
+        await writer.drain()
+
+        writer.close()
+        await writer.wait_closed()
+    except Exception as e:
+        print("Failed to announce raffle results:", e)
+
+    # Reset raffle state
     raffle["active"] = False
-    raffle["task"] = None
+    raffle["task"]   = None
     raffle["participants"].clear()
-    print(f"Raffle over! Winners: {winners} each +{split} points")
+    print("Raffle over:", announcement)
 
 @app.get("/raffle")
 async def start_raffle(amount: int):
@@ -164,14 +184,14 @@ async def start_raffle(amount: int):
         "participants": set(),
         "task": asyncio.create_task(raffle_timer())
     })
-    return PlainTextResponse(f"🎉 Raffle started for {amount} points! Use /join?user=<you> within 30 s.")
+    return PlainTextResponse(f"🎉 Raffle started for {amount} points! Type !join to enter (30 s).")
 
 @app.get("/join")
 async def join_raffle(user: str):
     if not raffle["active"]:
         raise HTTPException(400, "No raffle is currently running.")
     raffle["participants"].add(user)
-    return PlainTextResponse(f"✅ {user} joined the raffle (now {len(raffle['participants'])} entrants).")
+    return PlainTextResponse(f"✅ {user} joined the raffle ({len(raffle['participants'])} entrants).")
 
 # ——— Existing endpoints ————————————————————————————————————————
 
@@ -211,13 +231,15 @@ async def gamble(user: str, wager: int):
     await asyncio.sleep(1)
 
     if choice == "coinflip":
-        win = random.choice([True,False]); detail = "Heads" if win else "Tails"
+        win, detail = random.choice([True, False]), None
+        detail = "Heads" if win else "Tails"
     elif choice == "dice":
-        roll = random.randint(1,6); win = roll>=4; detail = f"Rolled {roll}"
+        roll = random.randint(1,6); win = roll >= 4; detail = f"Rolled {roll}"
     else:
-        spin= random.randint(0,36); win=(spin!=0 and spin%2==0); detail=f"Landed on {spin}"
+        spin = random.randint(0,36); win = (spin != 0 and spin % 2 == 0)
+        detail = f"Landed on {spin}"
 
-    payout = wager*2 if win else 0
+    payout = wager * 2 if win else 0
     if payout:
         await add_user_points(user, payout)
     final = get_points(user)
@@ -239,32 +261,41 @@ async def slots(user: str, wager: int):
     await add_user_points(user, -wager)
 
     symbols = ["🍒","🍋","🔔","🍉","⭐","🍀"]
-    reels = [random.choice(symbols) for _ in range(3)]
+    reels   = [random.choice(symbols) for _ in range(3)]
     await asyncio.sleep(1)
 
-    if reels[0]==reels[1]==reels[2]:
-        payout = wager*5; result=f"💰 Jackpot! You won {payout}!"
-        await add_user_points(user, payout)
-    elif len(set(reels))==2:
-        payout = wager*2; result=f"😊 You matched two! You won {payout}!"
-        await add_user_points(user, payout)
+    if reels[0] == reels[1] == reels[2]:
+        payout = wager * 5; await add_user_points(user, payout)
+        result = f"💰 Jackpot! You won {payout}!"
+    elif len(set(reels)) == 2:
+        payout = wager * 2; await add_user_points(user, payout)
+        result = f"😊 You matched two! You won {payout}!"
     else:
         result = f"💔 No match. You lost {wager}."
     final = get_points(user)
 
-    return PlainTextResponse(f"🎰 {' | '.join(reels)} 🎰\n{result}\nFinal balance: {final} shrimp points.")
+    return PlainTextResponse(
+        f"🎰 {' | '.join(reels)} 🎰\n"
+        f"{result}\n"
+        f"Final balance: {final} shrimp points."
+    )
 
 @app.get("/leaderboard")
 async def leaderboard(limit: int = 10):
     conn = sqlite3.connect(DB)
     c    = conn.cursor()
-    c.execute("SELECT username, points FROM users ORDER BY points DESC LIMIT ?", (limit,))
+    c.execute(
+        "SELECT username, points FROM users ORDER BY points DESC LIMIT ?",
+        (limit,)
+    )
     rows = c.fetchall()
     conn.close()
+
     if not rows:
         return PlainTextResponse("No shrimp points yet.")
-    out = "🏆 Shrimp Leaderboard 🏆\n" + "\n".join(f"{i+1}. {u} — {p}" for i,(u,p) in enumerate(rows))
-    return PlainTextResponse(out)
+
+    lines = [f"{i+1}. {u} — {p} shrimp" for i,(u,p) in enumerate(rows)]
+    return PlainTextResponse("🏆 Shrimp Leaderboard 🏆\n" + "\n".join(lines))
 
 @app.get("/ping")
 async def ping():
