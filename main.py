@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import os
+import sqlite3
 # Configuration via environment variables\CHANNEL = os.getenv("TWITCH_CHANNEL", "yourchannel")
 REWARD_INTERVAL = int(os.getenv("REWARD_INTERVAL", 300))  # seconds between chat rewards
 REWARD_AMOUNT = int(os.getenv("REWARD_AMOUNT", 100))    # points per reward
