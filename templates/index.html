@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title> Points API Documentation</title>
+  <title>🦐 Shrimp API Documentation</title>
   <style>
     /* Base Reset */
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,7 +30,7 @@
       display: grid;
       gap: 1.5rem;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      align-items: stretch;           /* make all cards equal height */
+      align-items: stretch;
     }
 
     /* Card */
@@ -41,8 +41,8 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.6);
       display: flex;
       flex-direction: column;
-      justify-content: flex-start;   /* stack from top */
-      height: 100%;                   /* fill grid cell */
+      justify-content: flex-start;
+      height: 100%;
     }
     .card h2 {
       font-size: 1.5rem;
@@ -51,7 +51,7 @@
     }
     .card p {
       color: #c1c1c3;
-      margin-bottom: 1rem;            /* consistent spacing */
+      margin-bottom: 1rem;
     }
     .card code, .card pre {
       display: block;
@@ -76,19 +76,17 @@
       font-family: Consolas, monospace;
       font-size: 0.9rem;
       color: #50fa7b;
-      /* remove clipping & scroll */
       max-height: none;
       overflow: visible;
       margin-bottom: 1rem;
     }
-    /* wrap & pretty-print JSON inside <pre> */
     .card .sample pre {
       white-space: pre-wrap;
       word-break: break-word;
       margin: 0;
     }
     .card .command {
-      margin-top: auto;               /* push to bottom if extra space */
+      margin-top: auto;
       display: flex;
       align-items: center;
       gap: .5rem;
@@ -123,10 +121,28 @@
   </style>
 </head>
 <body>
-  <h1>Points API</h1>
+  <h1>🦐 Shrimp API</h1>
   <p class="lead">Beautiful, per-channel points REST API. Copy & paste Nightbot commands below.</p>
 
   <div class="grid">
+    <!-- /points -->
+    <div class="card">
+      <h2>🎯 /points</h2>
+      <p>Check how many points a user has.</p>
+      <ul class="params">
+        <li><strong>user</strong> (string)</li>
+        <li><strong>channel</strong> (string)</li>
+      </ul>
+      <code>GET /points?user=john&amp;channel=foo</code>
+      <div class="sample"><pre>{
+  "message": "john, you have 1500 shrimp points in 'foo'."
+}</pre></div>
+      <div class="command" data-cmd="!commands add !points $(urlfetch https://api-jt5t.onrender.com/points?user=$(user)&amp;channel=$(channel))">
+        <code>!commands add !points …</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
     <!-- /add -->
     <div class="card">
       <h2>➕ /add</h2>
