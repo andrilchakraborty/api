@@ -21,9 +21,6 @@ DB_FILE           = "shrimp.db"
 # ——— FastAPI setup ——————————————————————————————————————————————
 app = FastAPI()
 
-# Mount static files (optional)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 # Jinja2 templates
 templates = Jinja2Templates(directory="templates")
 
