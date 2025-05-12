@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -167,7 +167,7 @@
       <div class="sample"><pre>{
   "message": "✅ john now has 1500 shrimp points!"
 }</pre></div>
-      <div class="command" data-cmd="!commands add !add $(urlfetch https://api-jt5t.onrender.com/add?user=$(user)&amp;amount=$(count)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !add $(urlfetch https://api-jt5t.onrender.com/add?user=$(user)&amp;amount=$(1)&amp;channel=$(channel))">
         <code>!commands add !add …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -322,6 +322,26 @@
         <button onclick="copyCmd(this)">Copy</button>
       </div>
     </div>
+
+    <!-- /rob -->
+    <div class="card">
+      <h2>🔫 /rob</h2>
+      <p>Attempt to rob another user! Random outcomes with funny scenarios, steals 10–50% of victim’s balance, and enforces a cooldown.</p>
+      <ul class="params">
+        <li><strong>robber</strong> (string)</li>
+        <li><strong>victim</strong> (string)</li>
+        <li><strong>channel</strong> (string)</li>
+      </ul>
+      <code>GET /rob?robber=john&amp;victim=doe&amp;channel=foo</code>
+      <div class="sample"><pre>{
+  "message": "💰 You tiptoe behind doe and snatch 75 shrimp points before they notice!"
+}</pre></div>
+      <div class="command" data-cmd="!commands add !rob $(urlfetch https://api-jt5t.onrender.com/rob?robber=$(user)&amp;victim=$(1)&amp;channel=$(channel))">
+        <code>!commands add !rob …</code>
+        <button onclick="copyCmd(this)">Copy</button>
+      </div>
+    </div>
+
   </div>
 
   <footer>
