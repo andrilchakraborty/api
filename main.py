@@ -1,8 +1,9 @@
 import os
-import sqlite3
+import json
 import random
 import asyncio
 import time
+import sqlite3
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, HTMLResponse
@@ -14,52 +15,102 @@ from fastapi.middleware.cors import CORSMiddleware
 SERVICE_URL       = "https://api-jt5t.onrender.com"
 DEFAULT_CHANNEL   = os.getenv("TWITCH_CHANNEL", "shrimpur")
 BOT_NICK          = os.getenv("TWITCH_BOT_NICK", "shrimpur")
-BOT_OAUTH         = os.getenv("TWITCH_OAUTH", "oauth:xaz44k12jaiufen1ngyme5bn0lyhca")
+BOT_OAUTH         = os.getenv("TWITCH_OAUTH", "oauth:your_oauth_token_here")
 REWARD_INTERVAL   = int(os.getenv("REWARD_INTERVAL", 300))
 REWARD_AMOUNT     = int(os.getenv("REWARD_AMOUNT", 100))
 DB_FILE           = "shrimp.db"
+ROB_COOLDOWN      = 300  # seconds before you can rob same victim again
 
-# how long before you can rob the same victim again (in seconds)
-ROB_COOLDOWN      = 300  
+# ——— CSGO CRATE CONFIGURATION —————————————————————————————————————
+# 50 real CSGO skins sourced from various cases (abbreviated list)
+CRATE_CONFIG = {
+    "Panther Case": {
+        "price": 500,
+        "rarities": {
+            "Mil-Spec (Blue)": [
+                "MP7 | Armor Core", "Desert Eagle | Directive", "P250 | Splash", "SSG 08 | Blue Spruce",
+                "FAMAS | Valence", "Glock-18 | Bunsen Burner", "P90 | Cold Blooded", "Nova | Redux",
+                "XM1014 | Tranquility", "MAG-7 | Heat"  # 10
+            ],
+            "Restricted (Purple)": [
+                "AK-47 | Redline", "AWP | Man-o'-war", "M4A4 | Griffin", "USP-S | Kill Confirmed",
+                "Galil AR | Cerberus", "AUG | Syd Mead", "MAC-10 | Neon Rider", "MP9 | Bulldozer",
+                "Nova | Wild Six", "SG 553 | Damascus Steel"  # 10
+            ],
+            "Classified (Pink)": [
+                "M4A1-S | Cyrex", "AK-47 | Cartel", "AWP | Capillary", "Desert Eagle | Blaze",
+                "P250 | Muertos", "Five-SeveN | Hyper Beast", "SSG 08 | Dragonfire", "FIVE-SEVEN | Triumvirate",
+                "G3SG1 | Orange Crash", "Tec-9 | Fuel Injector"  # 10
+            ],
+            "Covert (Red)": [
+                "AWP | Asiimov", "AK-47 | Fire Serpent", "M4A1-S | Guardian", "USP-S | Neo-Noir",
+                "Desert Eagle | Code Red", "Glock-18 | Fade", "P2000 | Imperial Dragon", "SSG 08 | Blood in the Water",
+                "MAG-7 | Monster Call", "MP7 | Nemesis"  # 10
+            ],
+            "Exceedingly Rare (Gold)": [
+                "★ Karambit | Doppler", "★ M9 Bayonet | Marble Fade", "★ Butterfly Knife | Slaughter",
+                "★ Bayonet | Crimson Web", "★ Huntsman Knife | Fade", "★ Flip Knife | Tiger Tooth",
+                "★ Gut Knife | Lore", "★ Shadow Daggers | Damascus Steel", "★ Bowie Knife | Damascus Steel",
+                "★ Talon Knife | Rust Coat"  # 10
+            ]
+        },
+        "weights": [0.79, 0.16, 0.03, 0.009, 0.001]
+    }
+}
 
-# ——— FastAPI setup ——————————————————————————————————————————————
+# ——— FastAPI setup —————————————————————————————————————————————
 app = FastAPI()
-templates = Jinja2Templates(directory="templates")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
 )
 
-# ——— Database initialization —————————————————————————————————————
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ——— Database Initialization —————————————————————————————————————
 def init_db():
     conn = sqlite3.connect(DB_FILE)
-    # users table
+    # users points
     conn.execute("""
       CREATE TABLE IF NOT EXISTS users (
-        channel     TEXT NOT NULL,
-        username    TEXT NOT NULL,
-        points      INTEGER NOT NULL DEFAULT 0,
+        channel TEXT NOT NULL,
+        username TEXT NOT NULL,
+        points INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(channel, username)
       )
     """)
-    # settings table
-    conn.execute(f"""
+    # settings
+    conn.execute("""
       CREATE TABLE IF NOT EXISTS settings (
-        channel        TEXT PRIMARY KEY,
-        points_name    TEXT NOT NULL,
-        reward_amount  INTEGER NOT NULL DEFAULT {REWARD_AMOUNT}
+        channel TEXT PRIMARY KEY,
+        points_name TEXT NOT NULL,
+        reward_amount INTEGER NOT NULL DEFAULT ?
       )
-    """)
+    """, (REWARD_AMOUNT,))
     # rob cooldowns
     conn.execute("""
       CREATE TABLE IF NOT EXISTS rob_cooldowns (
-        channel     TEXT NOT NULL,
-        robber      TEXT NOT NULL,
-        victim      TEXT NOT NULL,
-        last_rob    INTEGER NOT NULL,
+        channel TEXT NOT NULL,
+        robber TEXT NOT NULL,
+        victim TEXT NOT NULL,
+        last_rob INTEGER NOT NULL,
         PRIMARY KEY(channel, robber, victim)
       )
     """)
-    # seed default channel settings
+    # inventory
+    conn.execute("""
+      CREATE TABLE IF NOT EXISTS inventory (
+        channel TEXT NOT NULL,
+        username TEXT NOT NULL,
+        skin TEXT NOT NULL,
+        obtained_at INTEGER NOT NULL,
+        PRIMARY KEY(channel, username, skin, obtained_at)
+      )
+    """)
+    # insert default settings
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name, reward_amount)
       VALUES(?, ?, ?)
@@ -68,7 +119,6 @@ def init_db():
     conn.close()
 
 init_db()
-
 # ——— Helpers —————————————————————————————————————————————————————
 def get_points_table(user: str, channel: str) -> int:
     conn = sqlite3.connect(DB_FILE)
@@ -157,6 +207,23 @@ async def update_rob_timestamp(channel: str, robber: str, victim: str):
     """, (channel, robber, victim, now))
     conn.commit()
     conn.close()
+async def add_inventory(user: str, channel: str, skin: str):
+    now = int(time.time())
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("""
+      INSERT INTO inventory(channel, username, skin, obtained_at)
+      VALUES(?, ?, ?, ?)
+    """, (channel, user, skin, now))
+    conn.commit()
+    conn.close()
+
+def get_inventory(user: str, channel: str) -> list:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT skin, obtained_at FROM inventory WHERE channel=? AND username=? ORDER BY obtained_at DESC", (channel, user))
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
 # ——— IRC chatter fetcher —————————————————————————————————————
 async def fetch_chatters_irc(channel: str) -> set:
@@ -224,6 +291,30 @@ async def schedule_ping():
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+@app.get("/crate")
+async def api_crates(channel: str = DEFAULT_CHANNEL):
+    return PlainTextResponse(json.dumps({k:{'price':v['price']} for k,v in CRATE_CONFIG.items()}))
+
+@app.get("/open_crate")
+async def api_open(user: str, crate: str, channel: str = DEFAULT_CHANNEL):
+    if crate not in CRATE_CONFIG: raise HTTPException(400)
+    price=CRATE_CONFIG[crate]['price']
+    if get_points(user.lstrip('@'),channel)<price:
+        return PlainTextResponse(f"Need {price} points.")
+    await add_points(user.lstrip('@'),channel,-price)
+    rar=list(CRATE_CONFIG[crate]['rarities'].keys())
+    weights=CRATE_CONFIG[crate]['weights']
+    r=random.choices(rar,weights=weights,k=1)[0]
+    skin=random.choice(CRATE_CONFIG[crate]['rarities'][r])
+    await add_inventory(user.lstrip('@'),channel,skin)
+    return PlainTextResponse(f"Opened {crate}: {r} - {skin}")
+
+@app.get("/inventory")
+async def api_inventory(user: str, channel: str = DEFAULT_CHANNEL):
+    inv=get_inventory(user.lstrip('@'),channel)
+    if not inv: return PlainTextResponse(f"{user} has empty inventory.")
+    lines=[f"{skin} @ {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))}" for skin,ts in inv]
+    return PlainTextResponse("\n".join(lines))
 
 # ——— /setreward ———————————————————————————————————————————————
 @app.get("/setreward")
