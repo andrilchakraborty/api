@@ -66,13 +66,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ——— Database Initialization —————————————————————————————————————
 def init_db():
     conn = sqlite3.connect(DB_FILE)
-    # users points
     conn.execute("""
       CREATE TABLE IF NOT EXISTS users (
         channel TEXT NOT NULL,
@@ -81,15 +80,14 @@ def init_db():
         PRIMARY KEY(channel, username)
       )
     """)
-    # settings
-    conn.execute("""
+    # settings table with literal default value
+    conn.execute(f"""
       CREATE TABLE IF NOT EXISTS settings (
         channel TEXT PRIMARY KEY,
         points_name TEXT NOT NULL,
-        reward_amount INTEGER NOT NULL DEFAULT ?
+        reward_amount INTEGER NOT NULL DEFAULT {REWARD_AMOUNT}
       )
-    """, (REWARD_AMOUNT,))
-    # rob cooldowns
+    """)
     conn.execute("""
       CREATE TABLE IF NOT EXISTS rob_cooldowns (
         channel TEXT NOT NULL,
@@ -99,7 +97,6 @@ def init_db():
         PRIMARY KEY(channel, robber, victim)
       )
     """)
-    # inventory
     conn.execute("""
       CREATE TABLE IF NOT EXISTS inventory (
         channel TEXT NOT NULL,
@@ -109,7 +106,6 @@ def init_db():
         PRIMARY KEY(channel, username, skin, obtained_at)
       )
     """)
-    # insert default settings
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name, reward_amount)
       VALUES(?, ?, ?)
@@ -118,6 +114,7 @@ def init_db():
     conn.close()
 
 init_db()
+
 # ——— Helpers —————————————————————————————————————————————————————
 def get_points_table(user: str, channel: str) -> int:
     conn = sqlite3.connect(DB_FILE)
