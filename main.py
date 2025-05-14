@@ -113,7 +113,6 @@ def init_db():
 
 init_db()
 
-# ——— Helpers —————————————————————————————————————————————————————
 def get_points_table(user: str, channel: str) -> int:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
