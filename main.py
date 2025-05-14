@@ -7,7 +7,6 @@ import sqlite3
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -67,7 +66,6 @@ app.add_middleware(
     allow_headers=["*"]
 )
 templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ——— Database Initialization —————————————————————————————————————
 def init_db():
