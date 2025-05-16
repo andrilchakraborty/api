@@ -238,7 +238,7 @@ class Driver(BaseModel):
 
 class RaceResult(BaseModel):
     race_id: int
-    positions: Dict[int, int]  # driver_id -> finishing position
+    positions: Dict[int, int]
 
 class Race(BaseModel):
     id: int
@@ -246,7 +246,7 @@ class Race(BaseModel):
     track: str
     laps: int
     completed: bool = False
-    result: RaceResult = None
+    result: Optional[RaceResult] = None
 
 # --- In-memory stores ---
 drivers: Dict[int, Driver] = {}
@@ -254,117 +254,123 @@ races: Dict[int, Race] = {}
 next_driver_id = 1
 next_race_id = 1
 
-# F1 points system for top 10
+# F1 points for top 10
 F1_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
 
 # --- API Endpoints ---
 
-# Create driver (POST)
-@app.post("/drivers", response_model=Driver)
+@app.post("/drivers")
 async def create_driver(name: str, team: str, skill: float = 0.5):
     global next_driver_id
+    if not name or name.lower() == "null" or not team or team.lower() == "null":
+        raise HTTPException(status_code=400, detail="Usage: provide valid name and team")
     if not (0.0 <= skill <= 1.0):
-        raise HTTPException(400, "Skill must be between 0 and 1")
+        raise HTTPException(status_code=400, detail="Skill must be between 0 and 1")
     d = Driver(id=next_driver_id, name=name, team=team, skill=skill)
     drivers[next_driver_id] = d
     next_driver_id += 1
     return d
 
-# Create driver via GET (for Nightbot)
-@app.get("/drivers/create", response_model=Driver)
-async def create_driver_get(name: str, team: str, skill: float = 0.5):
-    return await create_driver(name=name, team=team, skill=skill)
+# GET creation for Nightbot with plain text
+@app.get("/drivers/create")
+async def create_driver_get(name: Optional[str] = None, team: Optional[str] = None, skill: float = 0.5):
+    if not name or name.lower() == "null" or not team or team.lower() == "null":
+        return PlainTextResponse("Usage: !newdriver <Name> <Team>")
+    d = await create_driver(name=name, team=team, skill=skill)
+    return PlainTextResponse(f"Driver created: ID {d.id} - {d.name} ({d.team}), Skill {d.skill}")
 
-# List all drivers
-@app.get("/drivers", response_model=List[Driver])
+@app.get("/drivers")
 async def list_drivers():
-    return list(drivers.values())
+    if not drivers:
+        return PlainTextResponse("No drivers registered.")
+    lines = [f"{d.id}: {d.name} ({d.team}) - {d.points} pts" for d in drivers.values()]
+    return PlainTextResponse("Drivers:\n" + "\n".join(lines))
 
-# Get single driver
-@app.get("/drivers/{driver_id}", response_model=Driver)
+@app.get("/drivers/{driver_id}")
 async def get_driver(driver_id: int):
-    if driver_id not in drivers:
-        raise HTTPException(404, "Driver not found")
-    return drivers[driver_id]
+    d = drivers.get(driver_id)
+    if not d:
+        return PlainTextResponse("Driver not found.")
+    return PlainTextResponse(
+        f"Driver {d.id}: {d.name}\nTeam: {d.team}\nSkill: {d.skill}\nPoints: {d.points}\nPodiums: {d.podiums}\nRaces: {d.races}"
+    )
 
-# Schedule race (POST)
-@app.post("/races", response_model=Race)
+@app.post("/races")
 async def schedule_race(name: str, track: str, laps: int = 58):
     global next_race_id
+    if not name or name.lower() == "null" or not track or track.lower() == "null":
+        raise HTTPException(status_code=400, detail="Usage: provide valid race name and track")
     r = Race(id=next_race_id, name=name, track=track, laps=laps)
     races[next_race_id] = r
     next_race_id += 1
     return r
 
-# Schedule race via GET (for Nightbot)
-@app.get("/races/create", response_model=Race)
-async def schedule_race_get(name: str, track: str, laps: int = 58):
-    return await schedule_race(name=name, track=track, laps=laps)
-
-# List all races
-@app.get("/races", response_model=List[Race])
-async def list_races():
-    return list(races.values())
-
-# Get single race
-@app.get("/races/{race_id}", response_model=Race)
-async def get_race(race_id: int):
-    if race_id not in races:
-        raise HTTPException(404, "Race not found")
-    return races[race_id]
-
-# Run a race
-@app.post("/races/{race_id}/run", response_model=RaceResult)
-async def run_race(race_id: int):
-    if race_id not in races:
-        raise HTTPException(404, "Race not found")
-    race = races[race_id]
-    if race.completed:
-        raise HTTPException(400, "Race already completed")
-
-    # Simulate performance = skill + Gaussian noise
-    performance = []
-    for d in drivers.values():
-        score = random.gauss(d.skill, 0.1)
-        performance.append((d.id, score))
-    performance.sort(key=lambda x: x[1], reverse=True)
-
-    positions = {}
-    for idx, (driver_id, _) in enumerate(performance, start=1):
-        positions[driver_id] = idx
-        drv = drivers[driver_id]
-        drv.races += 1
-        if idx <= 10:
-            drv.points += F1_POINTS[idx-1]
-        if idx <= 3:
-            drv.podiums += 1
-
-    result = RaceResult(race_id=race_id, positions=positions)
-    race.result = result
-    race.completed = True
-    return result
-
-# Driver standings
-@app.get("/standings/drivers", response_model=List[Driver])
-async def driver_standings():
-    sorted_drivers = sorted(
-        drivers.values(),
-        key=lambda d: (d.points, d.podiums, -d.races),
-        reverse=True
+@app.get("/races/create")
+async def schedule_race_get(name: Optional[str] = None, track: Optional[str] = None, laps: int = 58):
+    if not name or name.lower() == "null" or not track or track.lower() == "null":
+        return PlainTextResponse("Usage: !schedule <RaceName> <Track> [<Laps>]")
+    r = await schedule_race(name=name, track=track, laps=laps)
+    return PlainTextResponse(
+        f"Race scheduled: ID {r.id} - {r.name} at {r.track}, {r.laps} laps"
     )
-    return sorted_drivers
 
-# Team standings
+@app.get("/races")
+async def list_races():
+    if not races:
+        return PlainTextResponse("No races scheduled.")
+    lines = [f"{r.id}: {r.name} at {r.track}, {r.laps} laps{' (Done)' if r.completed else ''}" for r in races.values()]
+    return PlainTextResponse("Races:\n" + "\n".join(lines))
+
+@app.get("/races/{race_id}")
+async def get_race(race_id: int):
+    r = races.get(race_id)
+    if not r:
+        return PlainTextResponse("Race not found.")
+    status = f"Completed: {r.completed}"
+    return PlainTextResponse(
+        f"Race {r.id}: {r.name}\nTrack: {r.track}\nLaps: {r.laps}\n{status}"
+    )
+
+@app.post("/races/{race_id}/run")
+async def run_race(race_id: int):
+    r = races.get(race_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Race not found")
+    if r.completed:
+        raise HTTPException(status_code=400, detail="Race already completed")
+    perf = [(d.id, random.gauss(d.skill, 0.1)) for d in drivers.values()]
+    perf.sort(key=lambda x: x[1], reverse=True)
+    lines = []
+    for pos, (did, _) in enumerate(perf, start=1):
+        d = drivers[did]
+        d.races += 1
+        if pos <= 10:
+            d.points += F1_POINTS[pos-1]
+        if pos <= 3:
+            d.podiums += 1
+        lines.append(f"{pos}. {d.name} ({d.team}) - +{(F1_POINTS[pos-1] if pos<=10 else 0)} pts")
+    r.completed = True
+    return PlainTextResponse("Results for race '" + r.name + "':\n" + "\n".join(lines))
+
+@app.get("/standings/drivers")
+async def driver_standings():
+    if not drivers:
+        return PlainTextResponse("No drivers to rank.")
+    sd = sorted(drivers.values(), key=lambda d: (d.points, d.podiums), reverse=True)
+    lines = [f"{i+1}. {d.name} - {d.points} pts ({d.podiums} podiums)" for i, d in enumerate(sd)]
+    return PlainTextResponse("Driver Standings:\n" + "\n".join(lines))
+
 @app.get("/standings/teams")
 async def team_standings():
-    team_totals: Dict[str, int] = {}
+    if not drivers:
+        return PlainTextResponse("No team data.")
+    totals: Dict[str, int] = {}
     for d in drivers.values():
-        team_totals.setdefault(d.team, 0)
-        team_totals[d.team] += d.points
-    sorted_teams = sorted(team_totals.items(), key=lambda x: x[1], reverse=True)
-    return [{"team": t, "points": p} for t, p in sorted_teams]
+        totals[d.team] = totals.get(d.team, 0) + d.points
+    sd = sorted(totals.items(), key=lambda x: x[1], reverse=True)
+    lines = [f"{i+1}. {team} - {pts} pts" for i, (team, pts) in enumerate(sd)]
+    return PlainTextResponse("Team Standings:\n" + "\n".join(lines))
 
-# Reset all data
 @app.delete("/reset")
 async def reset_league():
     drivers.clear()
@@ -372,7 +378,7 @@ async def reset_league():
     global next_driver_id, next_race_id
     next_driver_id = 1
     next_race_id = 1
-    return {"status": "reset completed"}
+    return PlainTextResponse("All data reset. League cleared.")
 
 # ——— /setreward ———————————————————————————————————————————————
 @app.get("/setreward")
