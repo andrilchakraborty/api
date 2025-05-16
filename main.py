@@ -258,26 +258,36 @@ next_race_id = 1
 F1_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
 
 # --- API Endpoints ---
+
+# Create driver (POST)
 @app.post("/drivers", response_model=Driver)
 async def create_driver(name: str, team: str, skill: float = 0.5):
     global next_driver_id
-    if skill < 0 or skill > 1:
+    if not (0.0 <= skill <= 1.0):
         raise HTTPException(400, "Skill must be between 0 and 1")
     d = Driver(id=next_driver_id, name=name, team=team, skill=skill)
     drivers[next_driver_id] = d
     next_driver_id += 1
     return d
 
+# Create driver via GET (for Nightbot)
+@app.get("/drivers/create", response_model=Driver)
+async def create_driver_get(name: str, team: str, skill: float = 0.5):
+    return await create_driver(name=name, team=team, skill=skill)
+
+# List all drivers
 @app.get("/drivers", response_model=List[Driver])
 async def list_drivers():
     return list(drivers.values())
 
+# Get single driver
 @app.get("/drivers/{driver_id}", response_model=Driver)
 async def get_driver(driver_id: int):
     if driver_id not in drivers:
         raise HTTPException(404, "Driver not found")
     return drivers[driver_id]
 
+# Schedule race (POST)
 @app.post("/races", response_model=Race)
 async def schedule_race(name: str, track: str, laps: int = 58):
     global next_race_id
@@ -286,16 +296,24 @@ async def schedule_race(name: str, track: str, laps: int = 58):
     next_race_id += 1
     return r
 
+# Schedule race via GET (for Nightbot)
+@app.get("/races/create", response_model=Race)
+async def schedule_race_get(name: str, track: str, laps: int = 58):
+    return await schedule_race(name=name, track=track, laps=laps)
+
+# List all races
 @app.get("/races", response_model=List[Race])
 async def list_races():
     return list(races.values())
 
+# Get single race
 @app.get("/races/{race_id}", response_model=Race)
 async def get_race(race_id: int):
     if race_id not in races:
         raise HTTPException(404, "Race not found")
     return races[race_id]
 
+# Run a race
 @app.post("/races/{race_id}/run", response_model=RaceResult)
 async def run_race(race_id: int):
     if race_id not in races:
@@ -304,10 +322,9 @@ async def run_race(race_id: int):
     if race.completed:
         raise HTTPException(400, "Race already completed")
 
-    # Simulate race: drivers sorted by performance = skill + random noise
+    # Simulate performance = skill + Gaussian noise
     performance = []
     for d in drivers.values():
-        # random gaussian around skill to reflect variability
         score = random.gauss(d.skill, 0.1)
         performance.append((d.id, score))
     performance.sort(key=lambda x: x[1], reverse=True)
@@ -315,23 +332,21 @@ async def run_race(race_id: int):
     positions = {}
     for idx, (driver_id, _) in enumerate(performance, start=1):
         positions[driver_id] = idx
-        # update driver stats
-        driver = drivers[driver_id]
-        driver.races += 1
+        drv = drivers[driver_id]
+        drv.races += 1
         if idx <= 10:
-            pts = F1_POINTS[idx-1]
-            driver.points += pts
+            drv.points += F1_POINTS[idx-1]
         if idx <= 3:
-            driver.podiums += 1
+            drv.podiums += 1
 
     result = RaceResult(race_id=race_id, positions=positions)
     race.result = result
     race.completed = True
     return result
 
+# Driver standings
 @app.get("/standings/drivers", response_model=List[Driver])
 async def driver_standings():
-    # Sort by points desc, then podiums, then races
     sorted_drivers = sorted(
         drivers.values(),
         key=lambda d: (d.points, d.podiums, -d.races),
@@ -339,17 +354,17 @@ async def driver_standings():
     )
     return sorted_drivers
 
+# Team standings
 @app.get("/standings/teams")
 async def team_standings():
-    # Sum points by team
     team_totals: Dict[str, int] = {}
     for d in drivers.values():
         team_totals.setdefault(d.team, 0)
         team_totals[d.team] += d.points
-    # Sort
     sorted_teams = sorted(team_totals.items(), key=lambda x: x[1], reverse=True)
     return [{"team": t, "points": p} for t, p in sorted_teams]
 
+# Reset all data
 @app.delete("/reset")
 async def reset_league():
     drivers.clear()
@@ -358,7 +373,6 @@ async def reset_league():
     next_driver_id = 1
     next_race_id = 1
     return {"status": "reset completed"}
-
 
 # ——— /setreward ———————————————————————————————————————————————
 @app.get("/setreward")
