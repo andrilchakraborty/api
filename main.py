@@ -236,17 +236,13 @@ class Driver(BaseModel):
     podiums: int = 0
     races: int = 0
 
-class RaceResult(BaseModel):
-    race_id: int
-    positions: Dict[int, int]
-
 class Race(BaseModel):
     id: int
     name: str
     track: str
     laps: int
     completed: bool = False
-    result: Optional[RaceResult] = None
+    result: Optional[Dict[int, int]] = None  # driver_id -> position
 
 # --- In-memory stores ---
 drivers: Dict[int, Driver] = {}
@@ -257,24 +253,34 @@ next_race_id = 1
 # F1 points for top 10
 F1_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
 
+# --- Helper: format race results ---
+def format_race_results(race: Race) -> str:
+    lines = []
+    positions = race.result or {}
+    # invert positions dict to list sorted by position
+    sorted_drivers = sorted(positions.items(), key=lambda x: x[1])
+    for pos, (did, _) in enumerate(sorted_drivers, start=1):
+        drv = drivers[did]
+        pts = F1_POINTS[pos-1] if pos <= 10 else 0
+        lines.append(f"{pos}. {drv.name} ({drv.team}) - +{pts} pts")
+    return f"Results for race '{race.name}':\n" + "\n".join(lines)
+
 # --- API Endpoints ---
 
+# Driver endpoints
 @app.post("/drivers")
 async def create_driver(name: str, team: str, skill: float = 0.5):
     global next_driver_id
-    if not name or name.lower() == "null" or not team or team.lower() == "null":
-        raise HTTPException(status_code=400, detail="Usage: provide valid name and team")
-    if not (0.0 <= skill <= 1.0):
-        raise HTTPException(status_code=400, detail="Skill must be between 0 and 1")
+    if not name or not team or not (0.0 <= skill <= 1.0):
+        raise HTTPException(status_code=400, detail="Usage: provide valid name, team, and skill 0-1")
     d = Driver(id=next_driver_id, name=name, team=team, skill=skill)
     drivers[next_driver_id] = d
     next_driver_id += 1
     return d
 
-# GET creation for Nightbot with plain text
 @app.get("/drivers/create")
 async def create_driver_get(name: Optional[str] = None, team: Optional[str] = None, skill: float = 0.5):
-    if not name or name.lower() == "null" or not team or team.lower() == "null":
+    if not name or not team:
         return PlainTextResponse("Usage: !newdriver <Name> <Team>")
     d = await create_driver(name=name, team=team, skill=skill)
     return PlainTextResponse(f"Driver created: ID {d.id} - {d.name} ({d.team}), Skill {d.skill}")
@@ -295,10 +301,11 @@ async def get_driver(driver_id: int):
         f"Driver {d.id}: {d.name}\nTeam: {d.team}\nSkill: {d.skill}\nPoints: {d.points}\nPodiums: {d.podiums}\nRaces: {d.races}"
     )
 
+# Race endpoints
 @app.post("/races")
 async def schedule_race(name: str, track: str, laps: int = 58):
     global next_race_id
-    if not name or name.lower() == "null" or not track or track.lower() == "null":
+    if not name or not track:
         raise HTTPException(status_code=400, detail="Usage: provide valid race name and track")
     r = Race(id=next_race_id, name=name, track=track, laps=laps)
     races[next_race_id] = r
@@ -307,18 +314,16 @@ async def schedule_race(name: str, track: str, laps: int = 58):
 
 @app.get("/races/create")
 async def schedule_race_get(name: Optional[str] = None, track: Optional[str] = None, laps: int = 58):
-    if not name or name.lower() == "null" or not track or track.lower() == "null":
+    if not name or not track:
         return PlainTextResponse("Usage: !schedule <RaceName> <Track> [<Laps>]")
     r = await schedule_race(name=name, track=track, laps=laps)
-    return PlainTextResponse(
-        f"Race scheduled: ID {r.id} - {r.name} at {r.track}, {r.laps} laps"
-    )
+    return PlainTextResponse(f"Race scheduled: ID {r.id} - {r.name} at {r.track}, {r.laps} laps")
 
 @app.get("/races")
 async def list_races():
     if not races:
         return PlainTextResponse("No races scheduled.")
-    lines = [f"{r.id}: {r.name} at {r.track}, {r.laps} laps{' (Done)' if r.completed else ''}" for r in races.values()]
+    lines = [f"{r.id}: {r.name} at {r.track}, {r.laps} laps" + (" (Done)" if r.completed else "") for r in races.values()]
     return PlainTextResponse("Races:\n" + "\n".join(lines))
 
 @app.get("/races/{race_id}")
@@ -327,9 +332,7 @@ async def get_race(race_id: int):
     if not r:
         return PlainTextResponse("Race not found.")
     status = f"Completed: {r.completed}"
-    return PlainTextResponse(
-        f"Race {r.id}: {r.name}\nTrack: {r.track}\nLaps: {r.laps}\n{status}"
-    )
+    return PlainTextResponse(f"Race {r.id}: {r.name}\nTrack: {r.track}\nLaps: {r.laps}\n{status}")
 
 @app.post("/races/{race_id}/run")
 async def run_race(race_id: int):
@@ -338,9 +341,11 @@ async def run_race(race_id: int):
         raise HTTPException(status_code=404, detail="Race not found")
     if r.completed:
         raise HTTPException(status_code=400, detail="Race already completed")
+    # simulate performance
     perf = [(d.id, random.gauss(d.skill, 0.1)) for d in drivers.values()]
     perf.sort(key=lambda x: x[1], reverse=True)
-    lines = []
+    r.result = {did: pos for pos, (did, _) in enumerate(perf, start=1)}
+    # update stats
     for pos, (did, _) in enumerate(perf, start=1):
         d = drivers[did]
         d.races += 1
@@ -348,10 +353,15 @@ async def run_race(race_id: int):
             d.points += F1_POINTS[pos-1]
         if pos <= 3:
             d.podiums += 1
-        lines.append(f"{pos}. {d.name} ({d.team}) - +{(F1_POINTS[pos-1] if pos<=10 else 0)} pts")
     r.completed = True
-    return PlainTextResponse("Results for race '" + r.name + "':\n" + "\n".join(lines))
+    return PlainTextResponse(format_race_results(r))
 
+@app.get("/races/{race_id}/run")
+async def run_race_get(race_id: int):
+    # alias GET to POST for Nightbot
+    return await run_race(race_id)
+
+# Standings
 @app.get("/standings/drivers")
 async def driver_standings():
     if not drivers:
@@ -379,6 +389,7 @@ async def reset_league():
     next_driver_id = 1
     next_race_id = 1
     return PlainTextResponse("All data reset. League cleared.")
+
 
 # ——— /setreward ———————————————————————————————————————————————
 @app.get("/setreward")
@@ -514,15 +525,13 @@ def play_dice(amount: int):
           – Roll =   6 → ×5 (≈16.7% chance)  
           – Roll = 4-5 → ×2 (≈33.3% chance)  
           – Roll ≤3  → lose (≈50% chance)
-      • House edge: ~25%
-      • Flavor: “You grip the ivory cube, pray to Fortuna…”
     """
     roll = random.randint(1, 6)
     if roll == 6:
-        return 5, f"🎲 You rolled a **6**! Fortune smiles. Payout ×5."
+        return 5, f"🎲 You rolled a 6! Fortune smiles. Payout ×5."
     if roll >= 4:
-        return 2, f"🎲 You rolled a **{roll}**. You double up! ×2 reward."
-    return 0, f"🎲 You rolled a **{roll}**… nothing this time. You lose."
+        return 2, f"🎲 You rolled a {roll}. You double up! ×2 reward."
+    return 0, f"🎲 You rolled a {roll}… nothing this time. You lose."
 
 def play_slot(amount: int):
     """
@@ -530,9 +539,6 @@ def play_slot(amount: int):
       • Symbols: 🍒 ×3, 🍋, 🔔, ⭐, BAR  
       • Hit any “BAR” = instant loss.  
       • 2×🍒 = ×3, 3×🍒 = ×10, mixed (no BAR) = push ×1  
-      • Chance of BAR per reel = ~14%; cherries ~43%; mixed ~43%  
-      • House edge: ~5%
-      • Reels spin with mechanical clatter and flashing lights.
     """
     symbols = ["🍒", "🍒", "🍒", "🍋", "🔔", "⭐", "BAR"]
     spin = [random.choice(symbols) for _ in range(3)]
@@ -549,11 +555,9 @@ def play_slot(amount: int):
 def play_texas(amount: int):
     """
     Simplified Texas Hold’em Draw:
-      • Player “dealt” two cards, “flop” three community cards.
       • 15% → straight/flush → ×5  
       • 20% → any pair → ×2  
       • 65% → nothing → lose  
-      • This abstracts full hand ranking.
     """
     r = random.random()
     if r < 0.15:
@@ -565,33 +569,23 @@ def play_texas(amount: int):
 def play_roulette(amount: int):
     """
     European Roulette (single zero):
-      • Numbers 0–36; zero = house wins all color bets.  
-      • Bet color (red/black):
-          – Win ≈48.6% → ×2  
-          – Lose ≈51.4% → lose  
-      • Straight number hit (≈2.7%) → ×36  
-      • House edge: ≈2.7%
+      • Numbers 0–36; zero = house wins color bets  
+      • Color win ≈48.6% → ×2; straight ≈2.7% → ×36  
     """
     pocket = random.randint(0, 36)
     if pocket == 0:
-        return 0, f"🎡 Ball lands on **0**. House sweeps your bet."
-    # simulate number hit first
+        return 0, "🎡 Ball lands on 0. House sweeps your bet."
     if random.random() < 1/37:
-        return 36, f"🎡 Unbelievable! Exact hit **{pocket}** → ×36 jackpot!"
+        return 36, f"🎡 Unbelievable! Exact hit {pocket} → ×36 jackpot!"
     color = "red" if pocket % 2 else "black"
-    if random.random() < 18/37:  # exact red/black probability
-        return 2, f"🎡 Ball on **{pocket} {color}**. You win color bet ×2!"
-    return 0, f"🎡 Ball on **{pocket} {color}**. You lose."
+    if random.random() < 18/37:
+        return 2, f"🎡 Ball on {pocket} {color}. You win color bet ×2!"
+    return 0, f"🎡 Ball on {pocket} {color}. You lose."
 
 def play_blackjack(amount: int):
     """
     Mini‐Blackjack:
-      • One‐draw vs dealer:  
-          – 5% hit natural blackjack → ×2.5  
-          – 25% beat dealer → ×2  
-          – 70% lose → lose  
-      • No splits, no insurance, single deck abstraction.  
-      • House edge: ~0.5% (artificially generous!)
+      • 5% natural pays ×2.5; 25% beat dealer pays ×2; else lose  
     """
     r = random.random()
     if r < 0.05:
@@ -603,45 +597,35 @@ def play_blackjack(amount: int):
 def play_baccarat(amount: int):
     """
     Banker Bet Baccarat:
-      • Banker win ≈45.8% → ×1.95 (5% commission)  
-      • Player win ≈44.6% → lose on banker bet  
       • Tie ≈9.6% → push (×1)  
-      • House edge (banker) ≈1.06%
+      • Banker win ≈45.8% → ×1.95 (5% commission)  
+      • Else lose  
     """
     r = random.random()
     if r < 0.096:
         return 1, "🎴 It’s a tie. Push — your wager is returned."
-    if r < 0.096 + 0.458:
+    if r < 0.554:
         return 1.95, "🎴 Banker hand wins. You net ×1.95."
     return 0, "🎴 Player hand wins. You lose."
 
 def play_craps(amount: int):
     """
-    Pass Line Bet (Craps):
-      • Come‐out roll:
-          – 7 or 11 (≈22.2%) → ×2.5  
-          – 2,3,12 (≈11.1%) → lose  
-          – else → point (→ push ×1)  
-      • Simplified: on point we push.
+    Pass Line Bet:
+      • 7 or 11 (≈22.2%) → ×2.5; 2,3,12 (≈11.1%) → lose; else push ×1  
     """
-    die1, die2 = random.randint(1,6), random.randint(1,6)
-    total = die1 + die2
+    total = random.randint(1,6) + random.randint(1,6)
     if total in (7, 11):
-        return 2.5, f"🎲 You rolled **{total}** on come‐out. Win ×2.5!"
+        return 2.5, f"🎲 You rolled {total} on come‐out. Win ×2.5!"
     if total in (2, 3, 12):
-        return 0, f"🎲 Craps! You rolled **{total}**. House wins."
-    return 1, f"🎲 Rolled **{total}**. Point established — push."
+        return 0, f"🎲 Craps! You rolled {total}. House wins."
+    return 1, f"🎲 Rolled {total}. Point established — push."
 
 def play_keno(amount: int):
     """
     Keno (pick 3):
-      • Hit all 3 numbers (≈0.3%) → ×40  
-      • Hit 2 (≈3%) → ×5  
-      • Hit 1 (≈23%) → ×1 (push)  
-      • Hit 0 → lose  
-      • House edge ~25%
+      • Hit 3 → ×40; Hit 2 → ×5; Hit 1 → push; Hit 0 → lose  
     """
-    hits = sum(random.random() < 3/80 for _ in range(3))  # rough odds
+    hits = sum(random.random() < 3/80 for _ in range(3))
     if hits == 3:
         return 40, "🔢 All 3 numbers! Rare ×40 Keno jackpot!"
     if hits == 2:
@@ -652,19 +636,8 @@ def play_keno(amount: int):
 
 def play_video_poker(amount: int):
     """
-    Jacks or Better Video Poker:
-      • Deals “hand quality” by tier probabilities:  
-          – Royal Flush (≈0.003%) → ×800  
-          – Straight Flush (≈0.01%) → ×50  
-          – Four of a Kind (≈0.02%) → ×25  
-          – Full House (≈0.1%) → ×9  
-          – Flush (≈0.2%) → ×6  
-          – Straight (≈0.4%) → ×4  
-          – Three of a Kind (≈2.1%) → ×3  
-          – Two Pair (≈4.8%) → ×2  
-          – Jacks+ Pair (≈7%) → ×1  
-          – Else → lose  
-      • House edge ~0.5%
+    Video Poker (Jacks or Better):
+      • Royal Flush → ×800; Straight Flush → ×50; Four Kind → ×25; etc.  
     """
     r = random.random()
     if r < 0.00003:
@@ -690,15 +663,12 @@ def play_video_poker(amount: int):
 def play_hi_lo(amount: int):
     """
     High-Low Card:
-      • Draw a card 1–13 uniformly:
-          – Card >7 (≈46.2%) → ×2  
-          – Card ≤7 → lose  
-      • Fast, flip-and-see action.
+      • Draw 1–13: >7 wins ×2; else lose  
     """
     card = random.randint(1, 13)
     if card > 7:
-        return 2, f"🃏 You drew **{card}** (>7). You double up!"
-    return 0, f"🃏 You drew **{card}**. Too low. You lose."
+        return 2, f"🃏 You drew {card} (>7). You double up!"
+    return 0, f"🃏 You drew {card}. Too low. You lose."
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Assemble and weight the games
@@ -742,12 +712,12 @@ async def gamble(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
     if payout > 0:
         await add_user_points(user, channel, payout)
 
-    # 6) Build response
+    # 6) Build response (no asterisks)
     final = get_points_table(user, channel)
     pname = get_points_name(channel)
     emoji = "🎉" if mul > 1 else ("😐" if mul == 1 else "💀")
     msg = (
-        f"{emoji} {user} played **{game_name}** for {amount} {pname}.\n"
+        f"{emoji} {user} played {game_name} for {amount} {pname}.\n"
         f"{detail}\n"
         f"Payout: {payout} {pname}.\n"
         f"Final balance: {final} {pname}."
