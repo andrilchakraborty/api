@@ -148,7 +148,7 @@
       <div class="sample"><pre>{
   "message": "john, you have 1500 shrimp points in 'foo'."
 }</pre></div>
-      <div class="command" data-cmd="!commands add !points $(urlfetch https://api-jt5t.onrender.com/points?user=$(user)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !points $(urlfetch https://api-jt5t.onrender.com/points?user=$(user)&channel=$(channel))">
         <code>!commands add !points …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -167,7 +167,7 @@
       <div class="sample"><pre>{
   "message": "✅ john now has 1500 shrimp points!"
 }</pre></div>
-      <div class="command" data-cmd="!commands add !add $(urlfetch https://api-jt5t.onrender.com/add?user=$(user)&amp;amount=$(1)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !add $(urlfetch https://api-jt5t.onrender.com/add?user=$(1)&amount=$(2)&channel=$(channel))">
         <code>!commands add !add …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -185,7 +185,7 @@
       <div class="sample"><pre>{
   "message": "✅ Awarded 100 shrimp points to 14 chatters in 'foo'."
 }</pre></div>
-      <div class="command" data-cmd="!commands add !addall $(urlfetch https://api-jt5t.onrender.com/addall?amount=$(1)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !addall $(urlfetch https://api-jt5t.onrender.com/addall?amount=$(1)&channel=$(channel))">
         <code>!commands add !addall …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -204,7 +204,7 @@
       <div class="sample"><pre>{
   "message": "🎉 jane gambled 200 and hit ×5! Payout: 1000 shrimp points."
 }</pre></div>
-      <div class="command" data-cmd="!commands add !gamble $(urlfetch https://api-jt5t.onrender.com/gamble?user=$(user)&amp;wager=$(1)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !gamble $(urlfetch https://api-jt5t.onrender.com/gamble?user=$(user)&wager=$(1)&channel=$(channel))">
         <code>!commands add !gamble …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -223,7 +223,7 @@
       <div class="sample"><pre>{
   "message": "🎰 🍒 | 🍉 | ⭐\n🎉 You hit ×2 and won 200 shrimp points."
 }</pre></div>
-      <div class="command" data-cmd="!commands add !slots $(urlfetch https://api-jt5t.onrender.com/slots?user=$(user)&amp;wager=$(1)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !slots $(urlfetch https://api-jt5t.onrender.com/slots?user=$(user)&wager=$(1)&channel=$(channel))">
         <code>!commands add !slots …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -242,7 +242,7 @@
       <div class="sample"><pre>{
   "message": "🃏 Blackjack 🃏\nDealer wins. 18 vs 20.\nFinal balance: 1200 shrimp points."
 }</pre></div>
-      <div class="command" data-cmd="!commands add !blackjack $(urlfetch https://api-jt5t.onrender.com/blackjack?user=$(user)&amp;wager=$(1)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !blackjack $(urlfetch https://api-jt5t.onrender.com/blackjack?user=$(user)&wager=$(1)&channel=$(channel))">
         <code>!commands add !blackjack …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -263,7 +263,7 @@
     {"user":"bob","points":1800}
   ]
 }</pre></div>
-      <div class="command" data-cmd="!commands add !leaderboard $(urlfetch https://api-jt5t.onrender.com/leaderboard?limit=$(1)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !leaderboard $(urlfetch https://api-jt5t.onrender.com/leaderboard?limit=$(1)&channel=$(channel))">
         <code>!commands add !leaderboard …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -299,7 +299,7 @@
       <div class="sample"><pre>{
   "message": "✅ Reward per interval in 'foo' set to 150 points."
 }</pre></div>
-      <div class="command" data-cmd="!commands add !setreward $(urlfetch https://api-jt5t.onrender.com/setreward?channel=$(channel)&amp;amount=$(1))">
+      <div class="command" data-cmd="!commands add !setreward $(urlfetch https://api-jt5t.onrender.com/setreward?channel=$(channel)&amount=$(1))">
         <code>!commands add !setreward …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
@@ -317,7 +317,7 @@
       <div class="sample"><pre>{
   "message": "🎉 Raffle started in #foo for 500 shrimp points!"
 }</pre></div>
-      <div class="command" data-cmd="!commands add !raffle $(urlfetch https://api-jt5t.onrender.com/raffle?amount=$(1)&amp;channel=$(channel))">
+      <div class="command" data-cmd="!commands add !raffle $(urlfetch https://api-jt5t.onrender.com/raffle?amount=$(1)&channel=$(channel))">
         <code>!commands add !raffle …</code>
         <button onclick="copyCmd(this)">Copy</button>
       </div>
