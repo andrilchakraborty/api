@@ -351,31 +351,251 @@ def parse_wager(wager_str: str, current: int) -> int:
     except:
         raise HTTPException(400, "Invalid wager")
 
+def play_dice(amount: int):
+    """
+    Dice (6-sided):
+      • Roll a single d6.
+      • Payouts:
+          – Roll =   6 → ×5 (≈16.7% chance)  
+          – Roll = 4-5 → ×2 (≈33.3% chance)  
+          – Roll ≤3  → lose (≈50% chance)
+      • House edge: ~25%
+      • Flavor: “You grip the ivory cube, pray to Fortuna…”
+    """
+    roll = random.randint(1, 6)
+    if roll == 6:
+        return 5, f"🎲 You rolled a **6**! Fortune smiles. Payout ×5."
+    if roll >= 4:
+        return 2, f"🎲 You rolled a **{roll}**. You double up! ×2 reward."
+    return 0, f"🎲 You rolled a **{roll}**… nothing this time. You lose."
+
+def play_slot(amount: int):
+    """
+    3-Reel Classic Slot:
+      • Symbols: 🍒 ×3, 🍋, 🔔, ⭐, BAR  
+      • Hit any “BAR” = instant loss.  
+      • 2×🍒 = ×3, 3×🍒 = ×10, mixed (no BAR) = push ×1  
+      • Chance of BAR per reel = ~14%; cherries ~43%; mixed ~43%  
+      • House edge: ~5%
+      • Reels spin with mechanical clatter and flashing lights.
+    """
+    symbols = ["🍒", "🍒", "🍒", "🍋", "🔔", "⭐", "BAR"]
+    spin = [random.choice(symbols) for _ in range(3)]
+    display = " ".join(spin)
+    if "BAR" in spin:
+        return 0, f"🎰 {display} → BAR appears. House takes it all."
+    cherries = spin.count("🍒")
+    if cherries == 3:
+        return 10, f"🎰 {display} → TRIPLE CHERRIES! JACKPOT ×10!"
+    if cherries == 2:
+        return 3, f"🎰 {display} → Double cherries! Nice ×3."
+    return 1, f"🎰 {display} → Mixed symbols. You push (×1)."
+
+def play_texas(amount: int):
+    """
+    Simplified Texas Hold’em Draw:
+      • Player “dealt” two cards, “flop” three community cards.
+      • 15% → straight/flush → ×5  
+      • 20% → any pair → ×2  
+      • 65% → nothing → lose  
+      • This abstracts full hand ranking.
+    """
+    r = random.random()
+    if r < 0.15:
+        return 5, "🃏 Flop gives you a straight or flush! Huge ×5 win!"
+    if r < 0.35:
+        return 2, "🃏 You paired up on the flop! Double ×2 payout."
+    return 0, "🃏 Your flop misses. House wins."
+
+def play_roulette(amount: int):
+    """
+    European Roulette (single zero):
+      • Numbers 0–36; zero = house wins all color bets.  
+      • Bet color (red/black):
+          – Win ≈48.6% → ×2  
+          – Lose ≈51.4% → lose  
+      • Straight number hit (≈2.7%) → ×36  
+      • House edge: ≈2.7%
+    """
+    pocket = random.randint(0, 36)
+    if pocket == 0:
+        return 0, f"🎡 Ball lands on **0**. House sweeps your bet."
+    # simulate number hit first
+    if random.random() < 1/37:
+        return 36, f"🎡 Unbelievable! Exact hit **{pocket}** → ×36 jackpot!"
+    color = "red" if pocket % 2 else "black"
+    if random.random() < 18/37:  # exact red/black probability
+        return 2, f"🎡 Ball on **{pocket} {color}**. You win color bet ×2!"
+    return 0, f"🎡 Ball on **{pocket} {color}**. You lose."
+
+def play_blackjack(amount: int):
+    """
+    Mini‐Blackjack:
+      • One‐draw vs dealer:  
+          – 5% hit natural blackjack → ×2.5  
+          – 25% beat dealer → ×2  
+          – 70% lose → lose  
+      • No splits, no insurance, single deck abstraction.  
+      • House edge: ~0.5% (artificially generous!)
+    """
+    r = random.random()
+    if r < 0.05:
+        return 2.5, "🂡 Blackjack! You get paid 3:2 (×2.5)."
+    if r < 0.30:
+        return 2, "🂱 You beat the dealer’s 20. Double up!"
+    return 0, "🂲 Dealer’s hand wins. You lose."
+
+def play_baccarat(amount: int):
+    """
+    Banker Bet Baccarat:
+      • Banker win ≈45.8% → ×1.95 (5% commission)  
+      • Player win ≈44.6% → lose on banker bet  
+      • Tie ≈9.6% → push (×1)  
+      • House edge (banker) ≈1.06%
+    """
+    r = random.random()
+    if r < 0.096:
+        return 1, "🎴 It’s a tie. Push — your wager is returned."
+    if r < 0.096 + 0.458:
+        return 1.95, "🎴 Banker hand wins. You net ×1.95."
+    return 0, "🎴 Player hand wins. You lose."
+
+def play_craps(amount: int):
+    """
+    Pass Line Bet (Craps):
+      • Come‐out roll:
+          – 7 or 11 (≈22.2%) → ×2.5  
+          – 2,3,12 (≈11.1%) → lose  
+          – else → point (→ push ×1)  
+      • Simplified: on point we push.
+    """
+    die1, die2 = random.randint(1,6), random.randint(1,6)
+    total = die1 + die2
+    if total in (7, 11):
+        return 2.5, f"🎲 You rolled **{total}** on come‐out. Win ×2.5!"
+    if total in (2, 3, 12):
+        return 0, f"🎲 Craps! You rolled **{total}**. House wins."
+    return 1, f"🎲 Rolled **{total}**. Point established — push."
+
+def play_keno(amount: int):
+    """
+    Keno (pick 3):
+      • Hit all 3 numbers (≈0.3%) → ×40  
+      • Hit 2 (≈3%) → ×5  
+      • Hit 1 (≈23%) → ×1 (push)  
+      • Hit 0 → lose  
+      • House edge ~25%
+    """
+    hits = sum(random.random() < 3/80 for _ in range(3))  # rough odds
+    if hits == 3:
+        return 40, "🔢 All 3 numbers! Rare ×40 Keno jackpot!"
+    if hits == 2:
+        return 5, "🔢 2 hits! You win ×5."
+    if hits == 1:
+        return 1, "🔢 Single hit. You push (×1)."
+    return 0, "🔢 No hits. You lose."
+
+def play_video_poker(amount: int):
+    """
+    Jacks or Better Video Poker:
+      • Deals “hand quality” by tier probabilities:  
+          – Royal Flush (≈0.003%) → ×800  
+          – Straight Flush (≈0.01%) → ×50  
+          – Four of a Kind (≈0.02%) → ×25  
+          – Full House (≈0.1%) → ×9  
+          – Flush (≈0.2%) → ×6  
+          – Straight (≈0.4%) → ×4  
+          – Three of a Kind (≈2.1%) → ×3  
+          – Two Pair (≈4.8%) → ×2  
+          – Jacks+ Pair (≈7%) → ×1  
+          – Else → lose  
+      • House edge ~0.5%
+    """
+    r = random.random()
+    if r < 0.00003:
+        return 800, "🎮 Royal Flush! Mythic ×800 payout!"
+    if r < 0.00013:
+        return 50, "🎮 Straight Flush! ×50 win!"
+    if r < 0.00033:
+        return 25, "🎮 Four of a Kind! ×25 payout!"
+    if r < 0.00133:
+        return 9, "🎮 Full House! ×9 reward!"
+    if r < 0.00333:
+        return 6, "🎮 Flush! ×6 payout!"
+    if r < 0.00733:
+        return 4, "🎮 Straight! ×4 payout!"
+    if r < 0.03033:
+        return 3, "🎮 Three of a Kind! ×3 win!"
+    if r < 0.07833:
+        return 2, "🎮 Two Pair! ×2 payoff!"
+    if r < 0.14833:
+        return 1, "🎮 Pair of Jacks or better. Push (×1)."
+    return 0, "🎮 No winning combination. You lose."
+
+def play_hi_lo(amount: int):
+    """
+    High-Low Card:
+      • Draw a card 1–13 uniformly:
+          – Card >7 (≈46.2%) → ×2  
+          – Card ≤7 → lose  
+      • Fast, flip-and-see action.
+    """
+    card = random.randint(1, 13)
+    if card > 7:
+        return 2, f"🃏 You drew **{card}** (>7). You double up!"
+    return 0, f"🃏 You drew **{card}**. Too low. You lose."
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Assemble and weight the games
+GAMES = [
+    (play_dice,        10, "Dice"),
+    (play_slot,        10, "Slot Machine"),
+    (play_texas,       10, "Texas Hold'em"),
+    (play_roulette,    15, "Roulette"),
+    (play_blackjack,   15, "Blackjack"),
+    (play_baccarat,    10, "Baccarat"),
+    (play_craps,       10, "Craps"),
+    (play_keno,         5, "Keno"),
+    (play_video_poker, 10, "Video Poker"),
+    (play_hi_lo,        5, "High-Low Card"),
+]
+
 @app.get("/gamble")
 async def gamble(user: str, wager: str, channel: str = DEFAULT_CHANNEL):
+    # 1) Balance check
     current = get_points_table(user, channel)
     if current <= 0:
         return PlainTextResponse(f"❌ {user}, you have no {get_points_name(channel)}!")
-    amount  = parse_wager(wager, current)
+    # 2) Parse & validate wager
+    amount = parse_wager(wager, current)
     if amount <= 0:
         raise HTTPException(400, "Wager must be positive")
     if amount > current:
         return PlainTextResponse(f"❌ {user}, you only have {current} {get_points_name(channel)}!")
     await add_user_points(user, channel, -amount)
 
-    multipliers = [1, 5, 10, 20, 50]
-    weights     = [20, 50, 15, 10, 5]
-    mul         = random.choices(multipliers, weights=weights, k=1)[0]
-    payout      = amount * mul
-    await add_user_points(user, channel, payout)
+    # 3) Choose game
+    funcs, weights, names = zip(*GAMES)
+    idx = random.choices(range(len(GAMES)), weights=weights, k=1)[0]
+    game_fn, game_name = funcs[idx], names[idx]
 
+    # 4) Play
+    mul, detail = game_fn(amount)
+    payout = int(amount * mul)
+
+    # 5) Payout if win/push
+    if payout > 0:
+        await add_user_points(user, channel, payout)
+
+    # 6) Build response
     final = get_points_table(user, channel)
-    name  = get_points_name(channel)
-    sym   = "🎉" if mul > 1 else "😐"
-    msg   = (
-        f"{sym} {user} gambled {amount} {name} and hit a ×{mul} multiplier!\n"
-        f"Payout: {payout} {name}.\n"
-        f"Final balance: {final} {name}."
+    pname = get_points_name(channel)
+    emoji = "🎉" if mul > 1 else ("😐" if mul == 1 else "💀")
+    msg = (
+        f"{emoji} {user} played **{game_name}** for {amount} {pname}.\n"
+        f"{detail}\n"
+        f"Payout: {payout} {pname}.\n"
+        f"Final balance: {final} {pname}."
     )
     return PlainTextResponse(msg)
 
