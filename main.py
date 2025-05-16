@@ -3,7 +3,8 @@ import sqlite3
 import random
 import asyncio
 import time
-
+from pydantic import BaseModel, Field
+from typing import List, Dict
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
