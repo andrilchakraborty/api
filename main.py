@@ -64,7 +64,7 @@ def init_db():
     conn.execute("""
       INSERT OR IGNORE INTO settings(channel, points_name, reward_amount)
       VALUES(?, ?, ?)
-    """, (DEFAULT_CHANNEL, "shrimp points", REWARD_AMOUNT))
+    """, (DEFAULT_CHANNEL, "points", REWARD_AMOUNT))
     conn.commit()
     conn.close()
 
